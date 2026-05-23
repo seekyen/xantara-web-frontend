@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/bluec/**)",
+      "PowerShell(head -80)",
+      "PowerShell(cmd /c \"dir /a /s d:\\\\bluec\\\\pos_web 2>&1\")"
+    ]
+  }
+}
