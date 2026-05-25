@@ -1,9 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Read(//d/bluec/**)",
-      "PowerShell(head -80)",
-      "PowerShell(cmd /c \"dir /a /s d:\\\\bluec\\\\pos_web 2>&1\")"
+      "Bash(Start-Sleep -Seconds 6)",
+      "Bash(Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 5)",
+      "Bash(Select-Object -ExpandProperty StatusCode)",
+      "PowerShell(cd \"d:\\\\bluec\\\\pos_web\\\\frontend\"; Start-Process -NoNewWindow -FilePath \"npx\" -ArgumentList \"next\",\"dev\",\"--port\",\"3000\" -RedirectStandardOutput \"$env:TEMP\\\\nextjs_out.log\" -RedirectStandardError \"$env:TEMP\\\\nextjs_err.log\"; Start-Sleep -Seconds 8; try { $r = Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 5; \"Status: $\\($r.StatusCode\\)\" } catch { \"Not ready yet: $_\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8000/api/v1/auth/login/\" -Method POST -ContentType \"application/json\" -Body '{\"email\":\"ck@xantara.com\",\"password\":\"admin123\"}' -UseBasicParsing -TimeoutSec 5; \"Status: $\\($r.StatusCode\\)\"; $r.Content } catch { \"Backend error: $_\" })",
+      "PowerShell(Start-Process \"http://localhost:3000/login\")"
     ]
   }
 }
