@@ -1,6 +1,9 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useLayoutEffect, type ReactNode } from 'react'
+
+// Runs before first paint on client; falls back to useEffect on server (SSR-safe)
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 import { loginApi, parseLoginError, type LoginUser } from '@/lib/api/auth'
 
 export interface AuthUser {
@@ -47,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,     setUser]     = useState<AuthUser | null>(null)
   const [hydrated, setHydrated] = useState(false)
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) setUser(JSON.parse(stored) as AuthUser)

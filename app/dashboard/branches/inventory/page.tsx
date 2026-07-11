@@ -1,8 +1,5 @@
 'use client'
 
-// TODO: Replace MOCK_DATA with API call → GET /api/v1/products/
-// All CRUD operations → POST/PATCH/DELETE /api/v1/products/
-
 import { useState, useEffect, useRef } from 'react'
 import {
   Package, AlertTriangle, XCircle, TrendingUp,
@@ -11,7 +8,7 @@ import {
 } from 'lucide-react'
 import ReactBarcode from 'react-barcode'
 import Swal                                     from 'sweetalert2'
-import { getStatus, type Product } from '@/lib/mock/products'
+import { CATEGORIES, getStatus, type Product } from '@/lib/mock/products'
 import { createProduct, updateProduct, getAllProducts } from '@/lib/api/products'
 import { getCategories, getSubCategories, type Category as CatOption, type SubCategory as SubCatOption } from '@/lib/api/categories'
 import { usePOS }       from '@/context/POSContext'
@@ -42,9 +39,8 @@ function BoolTag({ value }: { value: boolean }) {
   )
 }
 
-function Rp({ value }: { value: number | string | undefined | null }) {
-  const n = Number(value)
-  return n ? <>₱{n.toLocaleString('en-PH')}</> : <span className="text-neutral-300">—</span>
+function Rp({ value }: { value: number }) {
+  return value ? <>₱{value.toLocaleString('en-PH')}</> : <span className="text-neutral-300">—</span>
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -64,7 +60,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
     <>
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed right-0 top-0 h-full w-[600px] max-w-full z-50 bg-white shadow-2xl flex flex-col animate-slide-in-right">
-        {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b border-neutral-100 flex-shrink-0">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -82,10 +77,7 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <X className="w-4 h-4 text-neutral-600" />
           </button>
         </div>
-
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-
           <Section title="Identification">
             <Field label="Item Code">{product.itemcode}</Field>
             <Field label="Item Code 2">{product.itemcode2}</Field>
@@ -96,12 +88,11 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Tag">{product.tag}</Field>
             <Field label="Query Text">{product.querytext}</Field>
           </Section>
-
           <Section title="Classification">
             <Field label="Department">{product.deptcode}</Field>
             <Field label="Class">{product.classcode}</Field>
-            <Field label="Category">{catOptions.find((c) => c.code === product.categorycode)?.name ?? product.categorycode}</Field>
-            <Field label="Sub-Category">{subCatOptions.find((s) => s.code === product.subcategorycode)?.name ?? product.subcategorycode}</Field>
+            <Field label="Category">{product.categorycode}</Field>
+            <Field label="Sub-Category">{product.subcategorycode}</Field>
             <Field label="Group">{product.group}</Field>
             <Field label="Size">{product.size}</Field>
             <Field label="Color">{product.color}</Field>
@@ -109,7 +100,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Item Type">{product.item_type}</Field>
             <Field label="Form">{product.form}</Field>
           </Section>
-
           <Section title="Pricing">
             <Field label="Retail Price"><Rp value={product.sell_price_rp} /></Field>
             <Field label="Wholesale Price"><Rp value={product.sell_price_ws} /></Field>
@@ -124,7 +114,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Dimension">{product.sell_dimension}</Field>
             <Field label="Weight">{product.sell_weight}</Field>
           </Section>
-
           <Section title="Stock">
             <Field label="Stock (SA)">{product.stock_sa}</Field>
             <Field label="Stock (SR)">{product.stock_sr}</Field>
@@ -141,7 +130,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Track Inventory"><BoolTag value={product.trackinventory} /></Field>
             <Field label="Below ROP"><BoolTag value={product.is_below_rop} /></Field>
           </Section>
-
           <Section title="Cost">
             <Field label="Unit Cost"><Rp value={product.unitcost} /></Field>
             <Field label="Avg. Unit Cost"><Rp value={product.unitcostave} /></Field>
@@ -149,7 +137,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Markup (Retail)"><Rp value={product.markup_rp} /></Field>
             <Field label="Markup (Wholesale)"><Rp value={product.markup_ws} /></Field>
           </Section>
-
           <Section title="Promotion">
             <Field label="On Promo"><BoolTag value={product.is_on_promo} /></Field>
             <Field label="Promo Allowed"><BoolTag value={product.pro_allowed} /></Field>
@@ -161,7 +148,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Date To">{product.pro_dateto}</Field>
             <Field label="Time To">{product.pro_timeto}</Field>
           </Section>
-
           <Section title="Supplier & Codes">
             <Field label="Supplier">{product.suppliercode}</Field>
             <Field label="Tax Code">{product.taxcode}</Field>
@@ -170,7 +156,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Price Type">{product.pricetype}</Field>
             <Field label="Barcode Type">{product.barcodetype}</Field>
           </Section>
-
           <Section title="Quantities & Misc">
             <Field label="Qty 1">{product.sell_quantity1 || null}</Field>
             <Field label="Qty 2">{product.sell_quantity2 || null}</Field>
@@ -186,7 +171,6 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Info 2">{product.info2}</Field>
             <Field label="Picture File">{product.picturefile}</Field>
           </Section>
-
           <Section title="Flags">
             <Field label="Active"><BoolTag value={product.active} /></Field>
             <Field label="With Serial"><BoolTag value={product.withserial} /></Field>
@@ -197,14 +181,12 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
             <Field label="Lot Number"><BoolTag value={product.lotnumber} /></Field>
             <Field label="Auto Conversion"><BoolTag value={product.withautoconv} /></Field>
           </Section>
-
           <Section title="Audit">
             <Field label="Created By">{product.createdby}</Field>
             <Field label="Created Date">{product.createddate}</Field>
             <Field label="Updated By">{product.updatedby}</Field>
             <Field label="Updated Date">{product.updateddate}</Field>
           </Section>
-
         </div>
       </div>
     </>
@@ -352,38 +334,23 @@ const PAGE_SIZE = 10
 
 type FormState = Partial<Product>
 
-export default function InventoryPage() {
+export default function BranchInventoryPage() {
   const { products, setProducts, productsLoading } = usePOS()
 
-  // ── Filter / sort state ──
   const [searchQuery,       setSearchQuery]       = useState('')
   const [selectedCategory,  setSelectedCategory]  = useState('all')
   const [stockFilter,       setStockFilter]        = useState('All')
   const [sortBy,            setSortBy]             = useState('name-asc')
-
-  // ── Pagination ──
-  const [page, setPage] = useState(1)
-
-  // ── Bulk select ──
-  const [selectedIds, setSelectedIds] = useState<number[]>([])
-
-  // ── Add / Edit modal ──
-  const [isModalOpen,    setIsModalOpen]    = useState(false)
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [form,           setForm]           = useState<FormState>({})
-  const [isSaving,       setIsSaving]       = useState(false)
-
-  // ── Detail drawer ──
-  const [selectedProduct,  setSelectedProduct]  = useState<Product | null>(null)
-
-  // ── Barcode modal ──
-  const [barcodeProduct,   setBarcodeProduct]   = useState<Product | null>(null)
-
-  // ── Delete confirm ──
-  const [deleteTarget,   setDeleteTarget]   = useState<Product | null>(null)
-
-  // ── Alert banner ──
-  const [showBanner, setShowBanner] = useState(true)
+  const [page,              setPage]              = useState(1)
+  const [selectedIds,       setSelectedIds]        = useState<number[]>([])
+  const [isModalOpen,       setIsModalOpen]        = useState(false)
+  const [editingProduct,    setEditingProduct]     = useState<Product | null>(null)
+  const [form,              setForm]               = useState<FormState>({})
+  const [isSaving,          setIsSaving]           = useState(false)
+  const [selectedProduct,   setSelectedProduct]    = useState<Product | null>(null)
+  const [barcodeProduct,    setBarcodeProduct]     = useState<Product | null>(null)
+  const [deleteTarget,      setDeleteTarget]       = useState<Product | null>(null)
+  const [showBanner,        setShowBanner]         = useState(true)
 
   // ── Category / Sub-category options ──
   const [catOptions,    setCatOptions]    = useState<CatOption[]>([])
@@ -395,12 +362,10 @@ export default function InventoryPage() {
     getSubCategories(t).then(setSubCatOptions).catch(() => {})
   }, [])
 
-  // ── Derived stats ──
   const lowStockCount = products.filter((p) => getStatus(p) === 'Low Stock').length
   const outOfStock    = products.filter((p) => p.total_stock === 0).length
-  const totalValue    = products.reduce((s, p) => s + (Number(p.sell_price_rp) || 0) * (Number(p.total_stock) || 0), 0)
+  const totalValue    = products.reduce((s, p) => s + p.sell_price_rp * p.total_stock, 0)
 
-  // ── Filter + sort ──
   const filtered = products
     .filter((p) =>
       searchQuery
@@ -412,7 +377,7 @@ export default function InventoryPage() {
     )
     .filter((p) =>
       selectedCategory !== 'all'
-        ? p.categorycode === selectedCategory
+        ? p.categorycode.toLowerCase() === selectedCategory.toLowerCase()
         : true
     )
     .filter((p) => {
@@ -422,9 +387,9 @@ export default function InventoryPage() {
     .sort((a, b) => {
       if (sortBy === 'name-asc')   return a.descshort.localeCompare(b.descshort)
       if (sortBy === 'name-desc')  return b.descshort.localeCompare(a.descshort)
-      if (sortBy === 'price-high') return Number(b.sell_price_rp) - Number(a.sell_price_rp)
-      if (sortBy === 'price-low')  return Number(a.sell_price_rp) - Number(b.sell_price_rp)
-      if (sortBy === 'stock-low')  return Number(a.total_stock)   - Number(b.total_stock)
+      if (sortBy === 'price-high') return b.sell_price_rp - a.sell_price_rp
+      if (sortBy === 'price-low')  return a.sell_price_rp - b.sell_price_rp
+      if (sortBy === 'stock-low')  return a.total_stock - b.total_stock
       return 0
     })
 
@@ -433,7 +398,6 @@ export default function InventoryPage() {
 
   useEffect(() => setPage(1), [searchQuery, selectedCategory, stockFilter, sortBy])
 
-  // ── Selection ──
   const toggleSelect    = (id: number) =>
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
   const toggleSelectAll = () =>
@@ -443,7 +407,6 @@ export default function InventoryPage() {
     setSelectedIds([])
   }
 
-  // ── Modal handlers ──
   const openAdd  = () => { setEditingProduct(null); setForm({}); setIsModalOpen(true) }
   const openEdit = (p: Product) => { setEditingProduct(p); setForm(p); setIsModalOpen(true) }
 
@@ -469,28 +432,23 @@ export default function InventoryPage() {
       const fresh = await getAllProducts(token)
       setProducts(fresh)
       Swal.fire({
-        icon:                'success',
-        title:               editingProduct ? 'Product updated!' : 'Product added!',
-        showConfirmButton:   false,
-        timer:               1800,
-        timerProgressBar:    true,
+        icon:              'success',
+        title:             editingProduct ? 'Product updated!' : 'Product added!',
+        showConfirmButton: false,
+        timer:             1800,
+        timerProgressBar:  true,
       })
     } catch (err) {
       const body = (err as { body?: Record<string, unknown> })?.body
       const detail = body
         ? Object.entries(body).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
         : (err instanceof Error ? err.message : String(err))
-      Swal.fire({
-        icon:  'error',
-        title: 'Save failed',
-        text:  detail,
-      })
+      Swal.fire({ icon: 'error', title: 'Save failed', text: detail })
     } finally {
       setIsSaving(false)
     }
   }
 
-  const openDelete    = (p: Product) => setDeleteTarget(p)
   const confirmDelete = () => {
     if (!deleteTarget) return
     setProducts((prev) => prev.filter((p) => p.id !== deleteTarget.id))
@@ -503,8 +461,8 @@ export default function InventoryPage() {
       {/* ── Header ── */}
       <div className="px-6 pt-6 pb-2 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-neutral-800">Inventory</h1>
-          <p className="text-sm text-neutral-400 mt-0.5">Manage your product stock</p>
+          <h1 className="text-xl font-bold text-neutral-800">Branch Inventory</h1>
+          <p className="text-sm text-neutral-400 mt-0.5">Manage product stock across branches</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold
@@ -621,7 +579,7 @@ export default function InventoryPage() {
           className="px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg
             text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-600">
           <option value="all">All Categories</option>
-          {catOptions.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+          {CATEGORIES.map((c) => <option key={c} value={c.toLowerCase()}>{c}</option>)}
         </select>
         <div className="flex items-center bg-neutral-100 rounded-lg p-0.5">
           {(['All', 'In Stock', 'Low Stock', 'Out of Stock'] as const).map((s) => (
@@ -672,8 +630,8 @@ export default function InventoryPage() {
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {paginated.map((product, i) => {
-              const status  = getStatus(product)
-              const maxBar  = product.stock_limit > 0 ? product.stock_limit : Math.max(product.total_stock, product.stock_rop * 3, 1)
+              const status = getStatus(product)
+              const maxBar = product.stock_limit > 0 ? product.stock_limit : Math.max(product.total_stock, product.stock_rop * 3, 1)
               return (
                 <tr
                   key={product.id ?? i}
@@ -699,12 +657,12 @@ export default function InventoryPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-neutral-100 text-neutral-600">
-                      {catOptions.find((c) => c.code === product.categorycode)?.name ?? product.categorycode}
+                      {product.categorycode}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm font-semibold text-neutral-800">
-                      ₱{(Number(product.sell_price_rp) || 0).toLocaleString('en-PH')}
+                      ₱{product.sell_price_rp.toLocaleString('en-PH')}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -734,7 +692,7 @@ export default function InventoryPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm text-neutral-600">
-                      ₱{((Number(product.sell_price_rp) || 0) * (Number(product.total_stock) || 0)).toLocaleString('en-PH')}
+                      ₱{(product.sell_price_rp * product.total_stock).toLocaleString('en-PH')}
                     </span>
                   </td>
                   <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
@@ -767,7 +725,7 @@ export default function InventoryPage() {
                           hover:bg-brand-50 text-neutral-400 hover:text-brand-600 transition-colors">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={() => openDelete(product)}
+                      <button onClick={() => setDeleteTarget(product)}
                         className="w-7 h-7 rounded-md flex items-center justify-center
                           hover:bg-danger-50 text-neutral-400 hover:text-danger-600 transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
@@ -849,9 +807,7 @@ export default function InventoryPage() {
                 <X className="w-4 h-4 text-neutral-600" />
               </button>
             </div>
-
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-
               <EditSection title="Identification">
                 <FText label="Description (Short) *" value={form.descshort} onChange={(v) => setForm((f) => ({ ...f, descshort: v }))} span2 />
                 <FText label="Item Code *" value={form.itemcode} onChange={(v) => setForm((f) => ({ ...f, itemcode: v }))} mono />
@@ -862,7 +818,6 @@ export default function InventoryPage() {
                 <FText label="Description (Long)" value={form.desclong} onChange={(v) => setForm((f) => ({ ...f, desclong: v }))} span2 />
                 <FText label="Query Text" value={form.querytext} onChange={(v) => setForm((f) => ({ ...f, querytext: v }))} span2 />
               </EditSection>
-
               <EditSection title="Classification">
                 <FText label="Department" value={form.deptcode} onChange={(v) => setForm((f) => ({ ...f, deptcode: v }))} />
                 <FText label="Class" value={form.classcode} onChange={(v) => setForm((f) => ({ ...f, classcode: v }))} />
@@ -892,7 +847,6 @@ export default function InventoryPage() {
                 <FText label="Item Type" value={form.item_type} onChange={(v) => setForm((f) => ({ ...f, item_type: v }))} />
                 <FText label="Form" value={form.form} onChange={(v) => setForm((f) => ({ ...f, form: v }))} />
               </EditSection>
-
               <EditSection title="Pricing">
                 <FNum label="Retail Price (₱) *" value={form.sell_price_rp} onChange={(v) => setForm((f) => ({ ...f, sell_price_rp: v ?? 0 }))} />
                 <FNum label="Wholesale Price (₱)" value={form.sell_price_ws} onChange={(v) => setForm((f) => ({ ...f, sell_price_ws: v ?? 0 }))} />
@@ -907,14 +861,12 @@ export default function InventoryPage() {
                 <FText label="Dimension" value={form.sell_dimension} onChange={(v) => setForm((f) => ({ ...f, sell_dimension: v }))} />
                 <FText label="Weight" value={form.sell_weight} onChange={(v) => setForm((f) => ({ ...f, sell_weight: v }))} />
               </EditSection>
-
               <EditSection title="Stock">
                 <FNum label="Stock (SA)" value={form.stock_sa} onChange={(v) => setForm((f) => ({ ...f, stock_sa: v ?? 0 }))} />
                 <FNum label="Reorder Point" value={form.stock_rop} onChange={(v) => setForm((f) => ({ ...f, stock_rop: v ?? 0 }))} />
                 <FNum label="Stock Limit" value={form.stock_limit} onChange={(v) => setForm((f) => ({ ...f, stock_limit: v ?? 0 }))} />
                 <FNum label="On Order" value={form.stock_onorder} onChange={(v) => setForm((f) => ({ ...f, stock_onorder: v ?? 0 }))} />
               </EditSection>
-
               <EditSection title="Cost">
                 <FNum label="Unit Cost (₱)" value={form.unitcost} onChange={(v) => setForm((f) => ({ ...f, unitcost: v ?? 0 }))} />
                 <FNum label="Avg. Unit Cost (₱)" value={form.unitcostave} onChange={(v) => setForm((f) => ({ ...f, unitcostave: v ?? 0 }))} />
@@ -922,7 +874,6 @@ export default function InventoryPage() {
                 <FNum label="Markup (Retail) (₱)" value={form.markup_rp} onChange={(v) => setForm((f) => ({ ...f, markup_rp: v ?? 0 }))} />
                 <FNum label="Markup (Wholesale) (₱)" value={form.markup_ws} onChange={(v) => setForm((f) => ({ ...f, markup_ws: v ?? 0 }))} />
               </EditSection>
-
               <EditSection title="Promotion">
                 <FNum label="Promo Price (Retail) (₱)" value={form.pro_priceret} onChange={(v) => setForm((f) => ({ ...f, pro_priceret: v ?? 0 }))} />
                 <FNum label="Promo Price (Wholesale) (₱)" value={form.pro_pricewhl} onChange={(v) => setForm((f) => ({ ...f, pro_pricewhl: v ?? 0 }))} />
@@ -933,7 +884,6 @@ export default function InventoryPage() {
                 <FText label="Date To" value={form.pro_dateto ?? ''} onChange={(v) => setForm((f) => ({ ...f, pro_dateto: v || null }))} placeholder="YYYY-MM-DD" />
                 <FText label="Time To" value={form.pro_timeto} onChange={(v) => setForm((f) => ({ ...f, pro_timeto: v }))} placeholder="HH:MM:SS" />
               </EditSection>
-
               <EditSection title="Supplier & Codes">
                 <FText label="Supplier Code" value={form.suppliercode} onChange={(v) => setForm((f) => ({ ...f, suppliercode: v }))} />
                 <FText label="Tax Code" value={form.taxcode} onChange={(v) => setForm((f) => ({ ...f, taxcode: v }))} />
@@ -942,7 +892,6 @@ export default function InventoryPage() {
                 <FText label="Price Type" value={form.pricetype} onChange={(v) => setForm((f) => ({ ...f, pricetype: v }))} />
                 <FText label="Barcode Type" value={form.barcodetype} onChange={(v) => setForm((f) => ({ ...f, barcodetype: v }))} />
               </EditSection>
-
               <EditSection title="Quantities & Misc">
                 <FNum label="Qty 1" value={form.sell_quantity1} onChange={(v) => setForm((f) => ({ ...f, sell_quantity1: v ?? 0 }))} />
                 <FNum label="Qty 2" value={form.sell_quantity2} onChange={(v) => setForm((f) => ({ ...f, sell_quantity2: v ?? 0 }))} />
@@ -959,7 +908,6 @@ export default function InventoryPage() {
                 <FText label="Info 1" value={form.info1} onChange={(v) => setForm((f) => ({ ...f, info1: v }))} span2 />
                 <FText label="Info 2" value={form.info2} onChange={(v) => setForm((f) => ({ ...f, info2: v }))} span2 />
               </EditSection>
-
               <EditSection title="Flags">
                 <FCheck label="Active" value={form.active} onChange={(v) => setForm((f) => ({ ...f, active: v }))} />
                 <FCheck label="Track Inventory" value={form.trackinventory} onChange={(v) => setForm((f) => ({ ...f, trackinventory: v }))} />
@@ -972,9 +920,7 @@ export default function InventoryPage() {
                 <FCheck label="Auto Conversion" value={form.withautoconv} onChange={(v) => setForm((f) => ({ ...f, withautoconv: v }))} />
                 <FCheck label="Promo Allowed" value={form.pro_allowed} onChange={(v) => setForm((f) => ({ ...f, pro_allowed: v }))} />
               </EditSection>
-
             </div>
-
             <div className="flex items-center gap-3 px-6 py-4 border-t border-neutral-100 flex-shrink-0">
               <button onClick={() => setIsModalOpen(false)}
                 className="flex-1 py-2.5 text-sm font-semibold text-neutral-600

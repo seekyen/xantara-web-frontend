@@ -1,17 +1,18 @@
 'use client'
 
-// TODO: Replace initial state with API calls — GET /api/products, /api/transactions, etc.
-// Each setter becomes the mutate() fn from SWR or a mutation from React Query.
-
-import { createContext, useContext, useState, type ReactNode, type Dispatch, type SetStateAction } from 'react'
-import { MOCK_PRODUCTS, type Product }       from '@/lib/mock/products'
+import { createContext, useContext, useState, useEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react'
+import { type Product }                        from '@/lib/mock/products'
+import { getAllProducts }                       from '@/lib/api/products'
 import { MOCK_TRANSACTIONS, type Transaction } from '@/lib/mock/transactions'
-import { MOCK_CUSTOMERS, type Customer }     from '@/lib/mock/customers'
-import { MOCK_STAFF, type Staff }            from '@/lib/mock/staff'
+import { MOCK_CUSTOMERS, type Customer }       from '@/lib/mock/customers'
+import { MOCK_STAFF, type Staff }              from '@/lib/mock/staff'
+
+const ACCESS_TOKEN_KEY = 'xantara_pos_access'
 
 interface POSContextType {
   products:        Product[]
   setProducts:     Dispatch<SetStateAction<Product[]>>
+  productsLoading: boolean
   transactions:    Transaction[]
   setTransactions: Dispatch<SetStateAction<Transaction[]>>
   customers:       Customer[]
@@ -23,14 +24,32 @@ interface POSContextType {
 const POSContext = createContext<POSContextType | null>(null)
 
 export function POSProvider({ children }: { children: ReactNode }) {
-  const [products,     setProducts]     = useState<Product[]>(MOCK_PRODUCTS)
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS)
-  const [customers,    setCustomers]    = useState<Customer[]>(MOCK_CUSTOMERS)
-  const [staff,        setStaff]        = useState<Staff[]>(MOCK_STAFF)
+  const [products,        setProducts]        = useState<Product[]>([])
+  const [productsLoading, setProductsLoading] = useState(true)
+  const [transactions,    setTransactions]    = useState<Transaction[]>(MOCK_TRANSACTIONS)
+  const [customers,       setCustomers]       = useState<Customer[]>(MOCK_CUSTOMERS)
+  const [staff,           setStaff]           = useState<Staff[]>(MOCK_STAFF)
+
+  useEffect(() => {
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
+    if (!token) { setProductsLoading(false); return }
+
+    async function load() {
+      try {
+        const all = await getAllProducts(token ?? undefined)
+        setProducts(all)
+      } catch (err) {
+        console.error('Failed to fetch products:', err)
+      } finally {
+        setProductsLoading(false)
+      }
+    }
+    load()
+  }, [])
 
   return (
     <POSContext.Provider value={{
-      products, setProducts,
+      products, setProducts, productsLoading,
       transactions, setTransactions,
       customers, setCustomers,
       staff, setStaff,

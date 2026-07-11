@@ -311,7 +311,7 @@ export default function StaffPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-1 text-xs text-neutral-400">
+                  <div className="flex items-center gap-1 text-xs text-neutral-400" suppressHydrationWarning>
                     <Clock className="w-3 h-3" />
                     {relativeTime(s.lastLogin)}
                   </div>
@@ -402,7 +402,8 @@ export default function StaffPage() {
               ].map(({ label, value }) => (
                 <div key={label} className="bg-neutral-50 rounded-lg p-3">
                   <div className="text-[10px] text-neutral-400 uppercase tracking-wide">{label}</div>
-                  <div className="text-sm font-bold text-neutral-800 mt-0.5">{value}</div>
+                  <div className="text-sm font-bold text-neutral-800 mt-0.5"
+                    suppressHydrationWarning={label === 'Last Login'}>{value}</div>
                 </div>
               ))}
             </div>
@@ -420,7 +421,7 @@ export default function StaffPage() {
                     <div key={t.id} className="flex items-center justify-between text-xs">
                       <span className="font-mono font-bold text-brand-600">{t.txnNo}</span>
                       <span className="text-neutral-400">{t.date} {t.time}</span>
-                      <span className="font-semibold text-neutral-800">₱{t.total.toLocaleString()}</span>
+                      <span className="font-semibold text-neutral-800">₱{t.total.toLocaleString('en-PH')}</span>
                     </div>
                   ))}
                 </div>

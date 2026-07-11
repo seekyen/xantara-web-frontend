@@ -23,7 +23,7 @@ const PAY_ICON: Record<PayMethod, React.ReactNode> = {
   Maya:  <Smartphone  className="w-3.5 h-3.5" />,
 }
 
-function fmt(n: number) { return `₱${n.toLocaleString()}` }
+function fmt(n: number) { return `₱${n.toLocaleString('en-PH')}` }
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })

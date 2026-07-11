@@ -3,14 +3,16 @@
 // TODO: Replace MOCK_DATA with API call → GET /api/dashboard/summary
 
 import Link from 'next/link'
+import { useState, useEffect } from 'react'
 import { Package, TrendingUp, Users, AlertTriangle, ArrowRight } from 'lucide-react'
 import { usePOS }          from '@/context/POSContext'
 import { useAuth }         from '@/context/AuthContext'
+import { getStatus }       from '@/lib/mock/products'
 import StatCard            from '@/components/shared/StatCard'
 import Badge               from '@/components/shared/Badge'
 import { WEEKLY_SALES }    from '@/lib/mock/reports'
 
-function fmt(n: number) { return `₱${n.toLocaleString()}` }
+function fmt(n: number) { return `₱${n.toLocaleString('en-PH')}` }
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -53,20 +55,42 @@ export default function DashboardPage() {
   // ── Derived stats ──
   const todayTxns    = transactions.filter((t) => t.date === '2026-05-24')
   const todayRev     = todayTxns.filter((t) => t.status === 'Completed').reduce((s, t) => s + t.total, 0)
-  const lowStockCnt  = products.filter((p) => p.status === 'Low Stock').length
-  const outOfStk     = products.filter((p) => p.status === 'Out of Stock').length
+  const lowStockCnt  = products.filter((p) => getStatus(p) === 'Low Stock').length
+  const outOfStk     = products.filter((p) => getStatus(p) === 'Out of Stock').length
   const activeCust   = customers.filter((c) => c.status === 'Active').length
   const recentTxns   = [...transactions].sort((a, b) => b.txnNo.localeCompare(a.txnNo)).slice(0, 5)
-  const alertItems   = products.filter((p) => p.status !== 'In Stock').slice(0, 6)
+  const alertItems   = products.filter((p) => getStatus(p) !== 'In Stock').slice(0, 6)
 
-  // Top 5 products by revenue (price × sold)
+  // Units sold per product, aggregated from completed transactions
+  const soldByProduct = transactions.reduce<Record<string, number>>((acc, t) => {
+    if (t.status === 'Completed') {
+      t.items.forEach((item) => { acc[item.productId] = (acc[item.productId] ?? 0) + item.qty })
+    }
+    return acc
+  }, {})
+
+  // Top 5 products by revenue (sell_price_rp × units sold)
   const topProducts = [...products]
-    .sort((a, b) => b.price * b.sold - a.price * a.sold)
+    .sort((a, b) =>
+      b.sell_price_rp * (soldByProduct[String(b.id)] ?? 0) -
+      a.sell_price_rp * (soldByProduct[String(a.id)] ?? 0)
+    )
     .slice(0, 5)
-  const maxRev = topProducts[0] ? topProducts[0].price * topProducts[0].sold : 1
+  const maxRev = topProducts[0]
+    ? topProducts[0].sell_price_rp * (soldByProduct[String(topProducts[0].id)] ?? 0)
+    : 1
 
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const inStockCnt   = products.filter((p) => getStatus(p) === 'In Stock').length
+  const [dashStockFilter, setDashStockFilter] = useState<'All' | 'Low Stock' | 'Out of Stock'>('All')
+  const filteredAlerts = alertItems.filter((p) =>
+    dashStockFilter === 'All' ? true : getStatus(p) === dashStockFilter
+  )
+
+  const [greeting, setGreeting] = useState('')
+  useEffect(() => {
+    const hour = new Date().getHours()
+    setGreeting(hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening')
+  }, [])
 
   return (
     <div className="pb-8">
@@ -150,21 +174,22 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-3">
             {topProducts.map((p, i) => {
-              const rev = p.price * p.sold
-              const w   = Math.round((rev / maxRev) * 100)
+              const sold = soldByProduct[String(p.id)] ?? 0
+              const rev  = p.sell_price_rp * sold
+              const w    = Math.round((rev / maxRev) * 100)
               return (
                 <div key={p.id} className="flex items-center gap-3">
                   <span className="text-xs font-bold text-neutral-400 w-4">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-semibold text-neutral-800 truncate">{p.name}</span>
+                      <span className="text-xs font-semibold text-neutral-800 truncate">{p.descshort}</span>
                       <span className="text-xs font-bold text-brand-600 ml-2">{fmt(rev)}</span>
                     </div>
                     <div className="h-1.5 bg-neutral-100 rounded-full">
                       <div className="h-full bg-brand-600 rounded-full" style={{ width: `${w}%` }} />
                     </div>
                   </div>
-                  <span className="text-[10px] text-neutral-400 w-12 text-right">{p.sold} sold</span>
+                  <span className="text-[10px] text-neutral-400 w-12 text-right">{sold} sold</span>
                 </div>
               )
             })}
@@ -207,31 +232,60 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Low stock alerts */}
+        {/* Stock alerts */}
         <div className="bg-white rounded-xl border border-neutral-200 p-5">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-neutral-800">Stock Alerts</h3>
             <Link href="/dashboard/inventory"
               className="text-xs text-brand-600 font-semibold hover:underline flex items-center gap-1">
               Manage <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-          {alertItems.length === 0 ? (
-            <p className="text-xs text-neutral-400 text-center py-4">All products are well-stocked.</p>
+
+          {/* Segmented stock status toggle */}
+          <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 mb-4">
+            {([
+              { label: 'All',          count: lowStockCnt + outOfStk },
+              { label: 'Low Stock',    count: lowStockCnt             },
+              { label: 'Out of Stock', count: outOfStk                },
+            ] as const).map(({ label, count }) => (
+              <button key={label}
+                onClick={() => setDashStockFilter(label)}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-semibold transition-all
+                  ${dashStockFilter === label
+                    ? 'bg-white text-neutral-800 shadow-sm'
+                    : 'text-neutral-500 hover:text-neutral-700'
+                  }`}>
+                {label}
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full
+                  ${dashStockFilter === label
+                    ? label === 'Out of Stock' ? 'bg-danger-100 text-danger-600'
+                      : label === 'Low Stock'  ? 'bg-warning-100 text-warning-600'
+                      : 'bg-neutral-100 text-neutral-500'
+                    : 'bg-neutral-200 text-neutral-400'
+                  }`}>{count}</span>
+              </button>
+            ))}
+          </div>
+
+          {filteredAlerts.length === 0 ? (
+            <p className="text-xs text-neutral-400 text-center py-4">
+              {dashStockFilter === 'All' ? 'All products are well-stocked.' : `No ${dashStockFilter} products.`}
+            </p>
           ) : (
             <div className="space-y-2.5">
-              {alertItems.map((p) => (
+              {filteredAlerts.map((p) => (
                 <div key={p.id} className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-neutral-800 truncate">{p.name}</div>
-                    <div className="text-[10px] text-neutral-400 font-mono">{p.sku}</div>
+                    <div className="text-xs font-semibold text-neutral-800 truncate">{p.descshort}</div>
+                    <div className="text-[10px] text-neutral-400 font-mono">{p.itemcode}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs font-bold ${
-                      p.stock === 0 ? 'text-danger-600' : 'text-warning-600'
-                    }`}>{p.stock} left</span>
-                    <Badge variant={p.stock === 0 ? 'danger' : 'warning'}>
-                      {p.status}
+                      p.total_stock === 0 ? 'text-danger-600' : 'text-warning-600'
+                    }`}>{p.total_stock} left</span>
+                    <Badge variant={p.total_stock === 0 ? 'danger' : 'warning'}>
+                      {getStatus(p)}
                     </Badge>
                   </div>
                 </div>

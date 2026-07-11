@@ -12,7 +12,7 @@ import { usePOS } from '@/context/POSContext'
 
 type Period = 'Today' | 'This Week' | 'This Month'
 
-function fmt(n: number) { return `₱${n.toLocaleString()}` }
+function fmt(n: number) { return `₱${n.toLocaleString('en-PH')}` }
 
 // ── Bar chart (pure CSS divs) ─────────────────────────────────────────────────
 function BarChart({ data, labelKey, valueKey, highlightIdx }: {
@@ -71,11 +71,24 @@ export default function ReportsPage() {
   const avgOrder      = periodOrders ? Math.round(periodRevenue / periodOrders) : 0
   const returnRate    = 2.1
 
-  // Top 5 products by revenue
+  // Units sold per product, aggregated from completed transactions
+  const soldByProduct = transactions.reduce<Record<string, number>>((acc, t) => {
+    if (t.status === 'Completed') {
+      t.items.forEach((item) => { acc[item.productId] = (acc[item.productId] ?? 0) + item.qty })
+    }
+    return acc
+  }, {})
+
+  // Top 5 products by revenue (sell_price_rp × units sold)
   const topProducts = [...products]
-    .sort((a, b) => (b.price * b.sold) - (a.price * a.sold))
+    .sort((a, b) =>
+      b.sell_price_rp * (soldByProduct[String(b.id)] ?? 0) -
+      a.sell_price_rp * (soldByProduct[String(a.id)] ?? 0)
+    )
     .slice(0, 5)
-  const maxProdRev  = topProducts[0] ? topProducts[0].price * topProducts[0].sold : 1
+  const maxProdRev = topProducts[0]
+    ? topProducts[0].sell_price_rp * (soldByProduct[String(topProducts[0].id)] ?? 0)
+    : 1
 
   const maxHourly = Math.max(...HOURLY_SALES.map((h) => h.sales))
 
@@ -208,14 +221,14 @@ export default function ReportsPage() {
           <h3 className="text-sm font-bold text-neutral-800 mb-4">Top Products</h3>
           <div className="space-y-3">
             {topProducts.map((p, i) => {
-              const rev = p.price * p.sold
+              const rev = p.sell_price_rp * (soldByProduct[String(p.id)] ?? 0)
               const w   = Math.round((rev / maxProdRev) * 100)
               return (
                 <div key={p.id} className="flex items-center gap-2">
                   <span className="text-xs font-bold text-neutral-400 w-4">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-semibold text-neutral-800 truncate">{p.name}</span>
+                      <span className="text-xs font-semibold text-neutral-800 truncate">{p.descshort}</span>
                       <span className="text-xs font-bold text-brand-600 ml-2 whitespace-nowrap">{fmt(rev)}</span>
                     </div>
                     <div className="h-1.5 bg-neutral-100 rounded-full">

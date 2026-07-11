@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
 import Sidebar from '@/components/layout/Sidebar'
@@ -10,7 +10,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, hydrated } = useAuth()
   const router             = useRouter()
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (hydrated && !user) router.replace('/login')
   }, [hydrated, user, router])
 
@@ -18,8 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!hydrated || !user) {
     return (
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent
-          rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
