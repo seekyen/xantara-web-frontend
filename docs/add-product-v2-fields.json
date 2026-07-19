@@ -1,0 +1,151 @@
+{
+  "source": "components/inventory/AddProductDialogV2.tsx",
+  "note": "UI-only preview, no backend wiring yet. backendField/backendModel are inferred from docs/add-product-v2-field-mapping.md for comparison purposes — verify against the actual Django models before wiring.",
+  "tabs": {
+    "itemDefinitions": [
+      { "section": "Row 1 - Identification", "label": "Item Code",              "uiType": "text",     "backendModel": "Product", "backendField": "itemcode" },
+      { "section": "Row 1 - Identification", "label": "Alternate Code",         "uiType": "text",     "backendModel": "Product", "backendField": "itemcode2" },
+      { "section": "Row 1 - Identification", "label": "Full Description (Long)","uiType": "text",     "backendModel": "Product", "backendField": "desclong" },
+      { "section": "Row 1 - Identification", "label": "POS Description",       "uiType": "text",     "backendModel": "Product", "backendField": "descshort" },
+      { "section": "Row 1 - Identification", "label": "Query Text",            "uiType": "text",     "backendModel": "Product", "backendField": "querytext" },
+      { "section": "Row 1 - Identification", "label": "Upload Image",          "uiType": "action",   "backendModel": "Product", "backendField": "picturefile" },
+      { "section": "Row 1 - Identification", "label": "Barcode preview",       "uiType": "display",  "backendModel": "Product", "backendField": "barcodetype", "notes": "Format is currently a global Settings default, not read from this per-item field" },
+      { "section": "Row 1 - Identification", "label": "QR Code preview",       "uiType": "display",  "backendModel": null, "backendField": null, "notes": "Encodes the Item Code value directly" },
+
+      { "section": "Row 2 - Item Info", "label": "Department",   "uiType": "dropdown", "backendModel": "Product", "backendField": "deptcode" },
+      { "section": "Row 2 - Item Info", "label": "Class",        "uiType": "dropdown", "backendModel": "Product", "backendField": "classcode" },
+      { "section": "Row 2 - Item Info", "label": "Category",     "uiType": "dropdown", "backendModel": "Product", "backendField": "categorycode" },
+      { "section": "Row 2 - Item Info", "label": "Sub-Category", "uiType": "dropdown", "backendModel": "Product", "backendField": "subcategorycode" },
+      { "section": "Row 2 - Item Info", "label": "Size",         "uiType": "dropdown", "backendModel": "Product", "backendField": "size" },
+      { "section": "Row 2 - Item Info", "label": "Color",        "uiType": "dropdown", "backendModel": "Product", "backendField": "color" },
+      { "section": "Row 2 - Item Info", "label": "Model",        "uiType": "text",     "backendModel": null, "backendField": null, "notes": "No matching legacy/Django field found" },
+      { "section": "Row 2 - Item Info", "label": "Dimension",    "uiType": "text",     "backendModel": "Product", "backendField": "sell_dimension" },
+      { "section": "Row 2 - Item Info", "label": "Units",        "uiType": "dropdown", "backendModel": "Product", "backendField": "sell_uom" },
+      { "section": "Row 2 - Item Info", "label": "Packing",      "uiType": "number",   "backendModel": "Product", "backendField": "sell_pack" },
+      { "section": "Row 2 - Item Info", "label": "Conversion",   "uiType": "number",   "backendModel": "Product", "backendField": "sell_packconv" },
+      { "section": "Row 2 - Item Info", "label": "Form",         "uiType": "dropdown", "backendModel": "Product", "backendField": "form" },
+      { "section": "Row 2 - Item Info", "label": "Type",         "uiType": "dropdown", "backendModel": "Product", "backendField": "item_type" },
+
+      { "section": "Row 3 - Options", "label": "Track Inventory",      "uiType": "checkbox", "backendModel": "Product", "backendField": "trackinventory" },
+      { "section": "Row 3 - Options", "label": "Alternate Codes",      "uiType": "checkbox", "backendModel": "Product", "backendField": "withalias" },
+      { "section": "Row 3 - Options", "label": "Weighted / Measured",  "uiType": "checkbox", "backendModel": "Product", "backendField": "measured" },
+      { "section": "Row 3 - Options", "label": "Serial Numbers",       "uiType": "checkbox", "backendModel": "Product", "backendField": "withserial" },
+      { "section": "Row 3 - Options", "label": "Generic",              "uiType": "checkbox", "backendModel": "Product", "backendField": "generic" },
+      { "section": "Row 3 - Options", "label": "Allow Promo",          "uiType": "checkbox", "backendModel": "Product", "backendField": "pro_allowed" },
+      { "section": "Row 3 - Options", "label": "Expiry Date",          "uiType": "checkbox", "backendModel": "Product", "backendField": "expirydate" },
+
+      { "section": "Row 3 - Stocks on Hand", "label": "Selling Area",        "uiType": "number", "backendModel": "ProductStock", "backendField": "stock_sa" },
+      { "section": "Row 3 - Stocks on Hand", "label": "Stock Room",          "uiType": "number", "backendModel": "ProductStock", "backendField": "stock_sr" },
+      { "section": "Row 3 - Stocks on Hand", "label": "Total Stocks",        "uiType": "number", "backendModel": "ProductStock", "backendField": null, "notes": "Derived — see ProductStock.total_stock property" },
+      { "section": "Row 3 - Stocks on Hand", "label": "On-order",            "uiType": "number", "backendModel": "ProductStock", "backendField": "stock_onorder" },
+      { "section": "Row 3 - Stocks on Hand", "label": "Date Last Ordered",   "uiType": "date",   "backendModel": null, "backendField": null, "notes": "No matching field found" },
+      { "section": "Row 3 - Stocks on Hand", "label": "Date Last Received",  "uiType": "date",   "backendModel": null, "backendField": null, "notes": "No matching field found" },
+      { "section": "Row 3 - Stocks on Hand", "label": "Date Last Sold",      "uiType": "date",   "backendModel": "Product", "backendField": "sell_lastdate" },
+      { "section": "Row 3 - Stocks on Hand", "label": "Entry Date",          "uiType": "date",   "backendModel": "Product", "backendField": "createddate", "notes": "Approximate match" },
+      { "section": "Row 3 - Stocks on Hand", "label": "Last Update",         "uiType": "date",   "backendModel": "Product", "backendField": "updateddate" }
+    ],
+
+    "itemInformation": [
+      { "section": "Top fields", "label": "Parent/Group Code", "uiType": "search",  "backendModel": "Product", "backendField": "group", "notes": "Not a confirmed exact match" },
+      { "section": "Top fields", "label": "Inventory Code",    "uiType": "text",    "backendModel": "Product", "backendField": "invcode" },
+      { "section": "Top fields", "label": "Picture File",      "uiType": "text",    "backendModel": "Product", "backendField": "picturefile" },
+      { "section": "Top fields", "label": "General Ledger Code","uiType": "text",   "backendModel": "Product", "backendField": "glcode" },
+      { "section": "Top fields", "label": "Item Status",       "uiType": "dropdown","backendModel": "Product", "backendField": "active" },
+      { "section": "Top fields", "label": "Signage Printing",  "uiType": "action",  "backendModel": "Product", "backendField": "printto", "notes": "Action button, not confirmed as a data-bound field" },
+
+      { "section": "Child SKU table", "label": "SKU Code",     "uiType": "table-column", "backendModel": null, "backendField": null, "notes": "No child/variant model reviewed yet" },
+      { "section": "Child SKU table", "label": "Style",        "uiType": "table-column", "backendModel": null, "backendField": null },
+      { "section": "Child SKU table", "label": "Size",         "uiType": "table-column", "backendModel": null, "backendField": null },
+      { "section": "Child SKU table", "label": "Color",        "uiType": "table-column", "backendModel": null, "backendField": null },
+
+      { "section": "Item Bundle table", "label": "Itemcode",     "uiType": "table-column", "backendModel": null, "backendField": null, "notes": "No bundle/composition model reviewed yet" },
+      { "section": "Item Bundle table", "label": "Description",  "uiType": "table-column", "backendModel": null, "backendField": null },
+      { "section": "Item Bundle table", "label": "Quantity",     "uiType": "table-column", "backendModel": null, "backendField": null }
+    ],
+
+    "purchasing": [
+      { "section": "Supplier Info", "label": "Supplier Code",   "uiType": "search", "backendModel": "Product", "backendField": "suppliercode" },
+      { "section": "Supplier Info", "label": "Company Name",    "uiType": "text",   "backendModel": null, "backendField": null, "notes": "Disabled, resolved from a Supplier model (not reviewed yet)" },
+      { "section": "Supplier Info", "label": "Order Terms",     "uiType": "text",   "backendModel": null, "backendField": null, "notes": "Disabled, resolved from a Supplier model (not reviewed yet)" },
+
+      { "section": "Ordering Information", "label": "Order Units",              "uiType": "search", "backendModel": "Product", "backendField": "sell_uom", "notes": "Likely duplicate display of Row 2 Units" },
+      { "section": "Ordering Information", "label": "Packing",                  "uiType": "text",   "backendModel": "Product", "backendField": "sell_pack", "notes": "Likely duplicate display of Row 2 Packing" },
+      { "section": "Ordering Information", "label": "Conversion",               "uiType": "text",   "backendModel": "Product", "backendField": "sell_packconv", "notes": "Likely duplicate display of Row 2 Conversion" },
+      { "section": "Ordering Information", "label": "Dimension",                "uiType": "text",   "backendModel": "Product", "backendField": "sell_dimension", "notes": "Likely duplicate display of Row 2 Dimension" },
+      { "section": "Ordering Information", "label": "Weight",                   "uiType": "text",   "backendModel": "Product", "backendField": "sell_weight" },
+      { "section": "Ordering Information", "label": "Origin",                   "uiType": "dropdown","backendModel": null, "backendField": null, "notes": "No matching field found" },
+      { "section": "Ordering Information", "label": "Country Code",             "uiType": "text",   "backendModel": null, "backendField": null, "notes": "No matching field found" },
+      { "section": "Ordering Information", "label": "Supplier Minimum Order",   "uiType": "number", "backendModel": null, "backendField": null, "notes": "No matching field found" },
+      { "section": "Ordering Information", "label": "Re-Order Point (ROP)",     "uiType": "number", "backendModel": "ProductStock", "backendField": "stock_rop" },
+      { "section": "Ordering Information", "label": "Maximum Stock",            "uiType": "number", "backendModel": "ProductStock", "backendField": "stock_limit" },
+
+      { "section": "Alternate Suppliers table", "label": "Alternate/Group Code", "uiType": "table-column", "backendModel": null, "backendField": null, "notes": "No AlternateSupplier model reviewed yet" },
+      { "section": "Alternate Suppliers table", "label": "Description",         "uiType": "table-column", "backendModel": null, "backendField": null },
+      { "section": "Alternate Suppliers table", "label": "Supplier",            "uiType": "table-column", "backendModel": null, "backendField": null },
+      { "section": "Alternate Suppliers table", "label": "Type",                "uiType": "table-column", "backendModel": null, "backendField": null },
+      { "section": "Alternate Suppliers table", "label": "Acq. Cost",           "uiType": "table-column", "backendModel": null, "backendField": null },
+      { "section": "Alternate Suppliers table", "label": "Last Ordered",        "uiType": "table-column", "backendModel": null, "backendField": null }
+    ],
+
+    "pricing": [
+      { "section": "Cost", "label": "Supplier First Cost", "uiType": "number", "backendModel": "Product", "backendField": "acqcost", "notes": "Likely match, not fully confirmed" },
+      { "section": "Cost", "label": "Tax Code",             "uiType": "dropdown","backendModel": "Product", "backendField": "taxcode" },
+      { "section": "Cost", "label": "Unit Cost",            "uiType": "number", "backendModel": "Product", "backendField": "unitcost" },
+      { "section": "Cost", "label": "Net Landed Cost",      "uiType": "number", "backendModel": "Product", "backendField": "unitcostave", "notes": "Not confirmed — may not be the same concept" },
+      { "section": "Cost", "label": "Compute Cost",         "uiType": "action", "backendModel": null, "backendField": null },
+      { "section": "Cost", "label": "View Cost History",    "uiType": "action", "backendModel": null, "backendField": null },
+
+      { "section": "Markup", "label": "Retail % Markup",         "uiType": "number", "backendModel": "Product", "backendField": "markup_rp" },
+      { "section": "Markup", "label": "Unit Retail",              "uiType": "number", "backendModel": "Product", "backendField": "sell_price_rp" },
+      { "section": "Markup", "label": "Gross Margin (Retail)",    "uiType": "number", "backendModel": null, "backendField": null, "notes": "Likely derived/computed, not a stored field" },
+      { "section": "Markup", "label": "Round Prices",             "uiType": "action", "backendModel": null, "backendField": null },
+      { "section": "Markup", "label": "Wholesale % Markup",       "uiType": "number", "backendModel": "Product", "backendField": "markup_ws" },
+      { "section": "Markup", "label": "Wholesale (Selling Price)","uiType": "number", "backendModel": "Product", "backendField": "sell_price_ws" },
+      { "section": "Markup", "label": "Gross Margin (Wholesale)", "uiType": "number", "backendModel": null, "backendField": null, "notes": "Likely derived/computed, not a stored field" },
+
+      { "section": "Misc Options", "label": "Min. Wholesale Qty", "uiType": "number",   "backendModel": "Product", "backendField": "minwhlsaleqty" },
+      { "section": "Misc Options", "label": "Multi-Packing",      "uiType": "dropdown", "backendModel": null, "backendField": null, "notes": "No matching field found" },
+      { "section": "Misc Options", "label": "Allowed Disc.",      "uiType": "dropdown", "backendModel": null, "backendField": null, "notes": "No matching field found" },
+
+      { "section": "Price Type", "label": "Price Type",     "uiType": "radio",  "backendModel": "Product", "backendField": "pricetype" },
+      { "section": "Price Type", "label": "Slow Movement",  "uiType": "number", "backendModel": "Product", "backendField": "slowfactor" },
+      { "section": "Price Type", "label": "Fast",           "uiType": "number", "backendModel": "Product", "backendField": "fastfactor" },
+
+      { "section": "Promo Info", "label": "Promo Price Retail",  "uiType": "number", "backendModel": "Product", "backendField": "pro_priceret" },
+      { "section": "Promo Info", "label": "Beginning of Promo",  "uiType": "text",   "backendModel": "Product", "backendField": "pro_datefr" },
+      { "section": "Promo Info", "label": "Promo End Date",      "uiType": "text",   "backendModel": "Product", "backendField": "pro_dateto" },
+      { "section": "Promo Info", "label": "Promo Time",          "uiType": "text",   "backendModel": "Product", "backendField": "pro_timefr", "notes": "Only one merged field in the UI; backend has separate pro_timefr/pro_timeto" },
+      { "section": "Promo Info", "label": "Retail Price 2",      "uiType": "number", "backendModel": "Product", "backendField": "sell_price2" },
+      { "section": "Promo Info", "label": "Retail Price 3",      "uiType": "number", "backendModel": "Product", "backendField": "sell_price3" }
+    ]
+  },
+  "backendFieldsWithNoUiField": [
+    { "backendModel": "Product", "backendField": "itemcode3" },
+    { "backendModel": "Product", "backendField": "itemcode3type" },
+    { "backendModel": "Product", "backendField": "style" },
+    { "backendModel": "Product", "backendField": "sell_price4" },
+    { "backendModel": "Product", "backendField": "sell_price5" },
+    { "backendModel": "Product", "backendField": "sell_quantity1" },
+    { "backendModel": "Product", "backendField": "sell_quantity2" },
+    { "backendModel": "Product", "backendField": "sell_quantity3" },
+    { "backendModel": "Product", "backendField": "sell_quantity4" },
+    { "backendModel": "Product", "backendField": "pro_pricewhl" },
+    { "backendModel": "Product", "backendField": "pro_cost" },
+    { "backendModel": "Product", "backendField": "pro_timeto", "notes": "Partial — UI has one merged Promo Time field" },
+    { "backendModel": "Product", "backendField": "lotnumber" },
+    { "backendModel": "Product", "backendField": "withautoconv" },
+    { "backendModel": "Product", "backendField": "planerid" },
+    { "backendModel": "Product", "backendField": "buyerid" },
+    { "backendModel": "Product", "backendField": "info1" },
+    { "backendModel": "Product", "backendField": "info2" },
+    { "backendModel": "Product", "backendField": "tag" },
+    { "backendModel": "Product", "backendField": "createdby", "notes": "Audit field — expected, no auth/backend wiring yet" },
+    { "backendModel": "Product", "backendField": "updatedby", "notes": "Audit field — expected, no auth/backend wiring yet" },
+    { "backendModel": "ProductStock", "backendField": "stock_book_sa" },
+    { "backendModel": "ProductStock", "backendField": "stock_book_sr" },
+    { "backendModel": "ProductStock", "backendField": "stock_reserved" },
+    { "backendModel": "ProductStock", "backendField": "beg_balance_sa" },
+    { "backendModel": "ProductStock", "backendField": "beg_balance_sr" },
+    { "backendModel": "ProductStock", "backendField": "beg_cost" }
+  ]
+}

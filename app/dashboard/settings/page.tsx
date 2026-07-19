@@ -7,6 +7,10 @@ import {
 } from 'lucide-react'
 import Swal from 'sweetalert2'
 import ConfirmModal from '@/components/shared/ConfirmModal'
+import BarcodePreview from '@/components/shared/BarcodePreview'
+import QRCodePreview from '@/components/shared/QRCodePreview'
+import { BARCODE_FORMATS, type BarcodeFormat, getStoredBarcodeFormat, setStoredBarcodeFormat } from '@/lib/barcodeFormat'
+import { QR_DOT_TYPES, QR_ERROR_CORRECTION_LEVELS, type QRStyleOptions, getStoredQRStyle, setStoredQRStyle } from '@/lib/qrStyle'
 import {
   type Category, type SubCategory,
   getCategories, getCategoriesPaged,
@@ -80,6 +84,24 @@ export default function SettingsPage() {
   const [phone,     setPhone]     = useState('02-8123-4567')
   const [email,     setEmail]     = useState('makati@xantara.com')
   const [savedMsg,  setSavedMsg]  = useState(false)
+
+  // ── General: Barcode & QR setup — both always derived from Item Code ──
+  // Default format persists to localStorage so Add Product can read the same
+  // default (no backend/database yet — see lib/barcodeFormat.ts).
+  const [barcodeFormat, setBarcodeFormatState] = useState<BarcodeFormat>(() => getStoredBarcodeFormat())
+  const handleBarcodeFormatChange = (format: BarcodeFormat) => {
+    setBarcodeFormatState(format)
+    setStoredBarcodeFormat(format)
+  }
+  const [qrStyle, setQrStyleState] = useState<QRStyleOptions>(() => getStoredQRStyle())
+  const handleQrStyleChange = (patch: Partial<QRStyleOptions>) => {
+    setQrStyleState((prev) => {
+      const next = { ...prev, ...patch }
+      setStoredQRStyle(next)
+      return next
+    })
+  }
+  const sampleItemCode = 'ITM-0001'
 
   // ── Payments ──
   const [payMethods,    setPayMethods]    = useState({ cash: true, card: true, gcash: true, maya: true })
@@ -355,33 +377,106 @@ export default function SettingsPage() {
 
           {/* ── GENERAL ── */}
           {tab === 'general' && (
-            <div className="space-y-5 max-w-lg">
-              <h2 className="text-sm font-bold text-neutral-800">Store Information</h2>
-              <Field label="Store Name" value={storeName} onChange={setStoreName} placeholder="Xantara Makati" />
-              <Field label="Address"    value={address}   onChange={setAddress}   placeholder="123 Ayala Ave" />
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Phone" value={phone} onChange={setPhone} type="tel"   placeholder="02-8123-4567"    />
-                <Field label="Email" value={email} onChange={setEmail} type="email" placeholder="store@email.com" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Currency</label>
-                <select className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
-                  <option>PHP — Philippine Peso (₱)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">Logo</label>
-                <div className="border-2 border-dashed border-neutral-200 rounded-xl p-6 flex flex-col items-center justify-center gap-2 hover:border-brand-400 hover:bg-brand-50 transition-colors cursor-pointer">
-                  <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center">
-                    <span className="text-white font-black text-lg">B</span>
+            <div className="flex gap-8 flex-wrap">
+              {/* Store Information */}
+              <div className="space-y-5 max-w-lg flex-1 min-w-[280px]">
+                <h2 className="text-sm font-bold text-neutral-800">Store Information</h2>
+                <Field label="Store Name" value={storeName} onChange={setStoreName} placeholder="Xantara Makati" />
+                <Field label="Address"    value={address}   onChange={setAddress}   placeholder="123 Ayala Ave" />
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Phone" value={phone} onChange={setPhone} type="tel"   placeholder="02-8123-4567"    />
+                  <Field label="Email" value={email} onChange={setEmail} type="email" placeholder="store@email.com" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Currency</label>
+                  <select className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                    <option>PHP — Philippine Peso (₱)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">Logo</label>
+                  <div className="border-2 border-dashed border-neutral-200 rounded-xl p-6 flex flex-col items-center justify-center gap-2 hover:border-brand-400 hover:bg-brand-50 transition-colors cursor-pointer">
+                    <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center">
+                      <span className="text-white font-black text-lg">B</span>
+                    </div>
+                    <p className="text-xs text-neutral-500">Click to upload or drag & drop</p>
+                    <p className="text-[10px] text-neutral-400">PNG, JPG up to 2MB</p>
                   </div>
-                  <p className="text-xs text-neutral-500">Click to upload or drag & drop</p>
-                  <p className="text-[10px] text-neutral-400">PNG, JPG up to 2MB</p>
+                </div>
+                <button onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors">
+                  {savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
+                </button>
+              </div>
+
+              {/* Barcode & QR Setup */}
+              <div className="space-y-5 max-w-xs flex-1 min-w-[240px] lg:border-l lg:border-neutral-100 lg:pl-8">
+                <div>
+                  <h2 className="text-sm font-bold text-neutral-800">Barcode & QR Setup</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">Both are always generated from each product's Item Code.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Barcode Format</label>
+                  <div className="space-y-2">
+                    {BARCODE_FORMATS.map((f) => (
+                      <label key={f}
+                        className={`flex items-center gap-3 px-3 py-2 border rounded-lg cursor-pointer transition-colors
+                          ${barcodeFormat === f ? 'border-brand-600 bg-brand-50' : 'border-neutral-200 hover:bg-neutral-50'}`}>
+                        <input type="checkbox" checked={barcodeFormat === f}
+                          onChange={() => handleBarcodeFormatChange(f)}
+                          className="w-4 h-4 rounded border-neutral-300 accent-brand-600 flex-shrink-0" />
+                        <span className="text-sm font-medium text-neutral-700 w-16 flex-shrink-0">{f}</span>
+                        <span className="flex-1 flex items-center justify-end overflow-hidden">
+                          <BarcodePreview value={sampleItemCode} format={f} height={28} displayValue={false} />
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">Barcode Preview</p>
+                  <div className="border border-neutral-200 rounded-xl p-4 flex items-center justify-center bg-neutral-50">
+                    <BarcodePreview value={sampleItemCode} format={barcodeFormat} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">QR Dot Style</label>
+                  <select value={qrStyle.dotType} onChange={(e) => handleQrStyleChange({ dotType: e.target.value as QRStyleOptions['dotType'] })}
+                    className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                    {QR_DOT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Dots Color</label>
+                    <input type="color" value={qrStyle.dotsColor} onChange={(e) => handleQrStyleChange({ dotsColor: e.target.value })}
+                      className="w-full h-9 px-1 py-1 border border-neutral-200 rounded-lg cursor-pointer" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Background</label>
+                    <input type="color" value={qrStyle.backgroundColor} onChange={(e) => handleQrStyleChange({ backgroundColor: e.target.value })}
+                      className="w-full h-9 px-1 py-1 border border-neutral-200 rounded-lg cursor-pointer" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Error Correction Level</label>
+                  <select value={qrStyle.errorCorrectionLevel} onChange={(e) => handleQrStyleChange({ errorCorrectionLevel: e.target.value as QRStyleOptions['errorCorrectionLevel'] })}
+                    className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                    {QR_ERROR_CORRECTION_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={qrStyle.includeLogo}
+                    onChange={(e) => handleQrStyleChange({ includeLogo: e.target.checked })}
+                    className="w-4 h-4 rounded border-neutral-300 accent-brand-600" />
+                  <span className="text-sm text-neutral-600">Add Logo</span>
+                </label>
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">QR Code Preview</p>
+                  <div className="border border-neutral-200 rounded-xl p-4 flex items-center justify-center bg-neutral-50">
+                    <QRCodePreview value={sampleItemCode} size={96} style={qrStyle} />
+                  </div>
                 </div>
               </div>
-              <button onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors">
-                {savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
-              </button>
             </div>
           )}
 
