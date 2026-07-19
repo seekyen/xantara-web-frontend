@@ -9,15 +9,18 @@ import {
   Search, Pencil, Trash2, X, ChevronLeft, ChevronRight, Download, Plus, Loader2,
   Barcode as BarcodeIcon, Printer,
 } from 'lucide-react'
-import ReactBarcode from 'react-barcode'
 import Swal                                     from 'sweetalert2'
 import { getStatus, type Product } from '@/lib/mock/products'
 import { createProduct, updateProduct, getAllProducts } from '@/lib/api/products'
+import BarcodePreview from '@/components/shared/BarcodePreview'
+import { getStoredBarcodeFormat } from '@/lib/barcodeFormat'
 import { getCategories, getSubCategories, type Category as CatOption, type SubCategory as SubCatOption } from '@/lib/api/categories'
 import { usePOS }       from '@/context/POSContext'
 import Badge            from '@/components/shared/Badge'
 import EmptyState       from '@/components/shared/EmptyState'
 import ConfirmModal     from '@/components/shared/ConfirmModal'
+import ProductFormDialog, { type ProductFormData } from '@/components/inventory/ProductFormDialog'
+import AddProductDialogV2 from '@/components/inventory/AddProductDialogV2'
 
 // ── Detail drawer helpers ────────────────────────────────────────────────────
 
@@ -58,7 +61,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: () => void }) {
+function ProductDetailDrawer({ product, onClose, catOptions, subCatOptions }: {
+  product: Product; onClose: () => void
+  catOptions: CatOption[]; subCatOptions: SubCatOption[]
+}) {
   const status = getStatus(product)
   return (
     <>
@@ -215,7 +221,9 @@ function ProductDetailDrawer({ product, onClose }: { product: Product; onClose: 
 
 function BarcodeModal({ product, onClose }: { product: Product; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
-  const value = (product.itemcode2 || product.itemcode || '').trim()
+  const value = (product.itemcode || '').trim()
+  // Default format comes from Settings > General > Barcode & QR Setup.
+  const [barcodeFormat] = useState(() => getStoredBarcodeFormat())
 
   const handlePrint = () => {
     if (!ref.current) return
@@ -252,7 +260,7 @@ function BarcodeModal({ product, onClose }: { product: Product; onClose: () => v
             <p className="text-xs font-semibold text-neutral-700 mb-3 truncate">{product.descshort}</p>
             {value ? (
               <div ref={ref} className="flex justify-center">
-                <ReactBarcode value={value} format="CODE128" width={1.5} height={64} fontSize={11} margin={4} />
+                <BarcodePreview value={value} format={barcodeFormat} height={64} />
               </div>
             ) : (
               <p className="text-xs text-neutral-400 py-6">No barcode value available.</p>
@@ -272,85 +280,9 @@ function BarcodeModal({ product, onClose }: { product: Product; onClose: () => v
   )
 }
 
-// ── Form helpers ─────────────────────────────────────────────────────────────
-
-function EditSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-3">
-      <h3 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest border-b border-neutral-100 pb-1.5">
-        {title}
-      </h3>
-      <div className="grid grid-cols-2 gap-3">{children}</div>
-    </div>
-  )
-}
-
-function FText({ label, value, onChange, placeholder, mono, span2 }: {
-  label: string; value: string | undefined; onChange: (v: string) => void
-  placeholder?: string; mono?: boolean; span2?: boolean
-}) {
-  return (
-    <div className={span2 ? 'col-span-2' : ''}>
-      <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">{label}</label>
-      <input type="text" value={value ?? ''} onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder ?? ''}
-        className={`w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 ${mono ? 'font-mono' : ''}`} />
-    </div>
-  )
-}
-
-function FNum({ label, value, onChange, placeholder }: {
-  label: string; value: number | undefined; onChange: (v: number | undefined) => void; placeholder?: string
-}) {
-  return (
-    <div>
-      <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">{label}</label>
-      <input type="number" value={value ?? ''} placeholder={placeholder ?? '0'}
-        onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
-        className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
-    </div>
-  )
-}
-
-function FCheck({ label, value, onChange }: {
-  label: string; value: boolean | undefined; onChange: (v: boolean) => void
-}) {
-  return (
-    <label className="flex items-center gap-2 cursor-pointer select-none">
-      <input type="checkbox" checked={value ?? false} onChange={(e) => onChange(e.target.checked)}
-        className="w-4 h-4 rounded border-neutral-300 accent-brand-600" />
-      <span className="text-sm text-neutral-600">{label}</span>
-    </label>
-  )
-}
-
-function FSelect({ label, value, onChange, options, placeholder, span2, disabled }: {
-  label: string; value: string | undefined; onChange: (v: string) => void
-  options: { value: string; label: string }[]; placeholder?: string; span2?: boolean; disabled?: boolean
-}) {
-  return (
-    <div className={span2 ? 'col-span-2' : ''}>
-      <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">{label}</label>
-      <select
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white disabled:bg-neutral-50 disabled:text-neutral-400"
-      >
-        <option value="">{placeholder ?? 'Select…'}</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-    </div>
-  )
-}
-
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 10
-
-type FormState = Partial<Product>
 
 export default function InventoryPage() {
   const { products, setProducts, productsLoading } = usePOS()
@@ -370,8 +302,13 @@ export default function InventoryPage() {
   // ── Add / Edit modal ──
   const [isModalOpen,    setIsModalOpen]    = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [form,           setForm]           = useState<FormState>({})
+
+  // ── Add Product UI preview (v2 tabbed dialog, no backend wiring yet) ──
+  const [isV2ModalOpen, setIsV2ModalOpen] = useState(false)
   const [isSaving,       setIsSaving]       = useState(false)
+
+  // Default barcode format comes from Settings > General > Barcode & QR Setup.
+  const [barcodeFormat] = useState(() => getStoredBarcodeFormat())
 
   // ── Detail drawer ──
   const [selectedProduct,  setSelectedProduct]  = useState<Product | null>(null)
@@ -444,10 +381,11 @@ export default function InventoryPage() {
   }
 
   // ── Modal handlers ──
-  const openAdd  = () => { setEditingProduct(null); setForm({}); setIsModalOpen(true) }
-  const openEdit = (p: Product) => { setEditingProduct(p); setForm(p); setIsModalOpen(true) }
+  const openAdd  = () => { setEditingProduct(null); setIsModalOpen(true) }
+  // Edit now opens the new tabbed UI (AddProductDialogV2) instead of the old dialog.
+  const openEdit = (p: Product) => { setEditingProduct(p); setIsV2ModalOpen(true) }
 
-  const handleSave = async () => {
+  const handleSave = async (form: ProductFormData) => {
     const token = localStorage.getItem('xantara_pos_access') ?? undefined
     const {
       id: _id, total_stock: _ts, is_below_rop: _br, is_on_promo: _promo,
@@ -520,6 +458,14 @@ export default function InventoryPage() {
           >
             <Plus className="w-4 h-4" />
             Add Product
+          </button>
+          <button
+            onClick={() => { setEditingProduct(null); setIsV2ModalOpen(true) }}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-brand-600
+              border border-brand-600 text-sm font-semibold rounded-xl hover:bg-brand-50 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Product (New UI)
           </button>
         </div>
       </div>
@@ -739,20 +685,16 @@ export default function InventoryPage() {
                   </td>
                   <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-center">
-                      {(product.itemcode2 || product.itemcode) ? (
+                      {product.itemcode ? (
                         <button
                           onClick={() => setBarcodeProduct(product)}
                           className="opacity-80 hover:opacity-100 transition-opacity"
                           title="Click to print barcode"
                         >
-                          <ReactBarcode
-                            value={product.itemcode2 || product.itemcode}
-                            format="CODE128"
-                            width={1}
+                          <BarcodePreview
+                            value={product.itemcode}
+                            format={barcodeFormat}
                             height={28}
-                            fontSize={7}
-                            margin={2}
-                            displayValue
                           />
                         </button>
                       ) : (
@@ -827,7 +769,12 @@ export default function InventoryPage() {
 
       {/* ── Product detail drawer ── */}
       {selectedProduct && (
-        <ProductDetailDrawer product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+        <ProductDetailDrawer
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+          catOptions={catOptions}
+          subCatOptions={subCatOptions}
+        />
       )}
 
       {/* ── Barcode modal ── */}
@@ -835,163 +782,29 @@ export default function InventoryPage() {
         <BarcodeModal product={barcodeProduct} onClose={() => setBarcodeProduct(null)} />
       )}
 
-      {/* ── Add / Edit drawer ── */}
+      {/* ── Add / Edit dialog ── */}
       {isModalOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-          <div className="fixed right-0 top-0 h-full w-[640px] max-w-full z-50 bg-white shadow-2xl flex flex-col animate-slide-in-right">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 flex-shrink-0">
-              <h2 className="text-base font-bold text-neutral-800">
-                {editingProduct ? 'Edit Product' : 'Add Product'}
-              </h2>
-              <button onClick={() => setIsModalOpen(false)}
-                className="w-8 h-8 rounded-lg hover:bg-neutral-100 flex items-center justify-center transition-colors">
-                <X className="w-4 h-4 text-neutral-600" />
-              </button>
-            </div>
+        <ProductFormDialog
+          open={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleSave}
+          editingProduct={editingProduct}
+          isSaving={isSaving}
+          catOptions={catOptions}
+          subCatOptions={subCatOptions}
+        />
+      )}
 
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-
-              <EditSection title="Identification">
-                <FText label="Description (Short) *" value={form.descshort} onChange={(v) => setForm((f) => ({ ...f, descshort: v }))} span2 />
-                <FText label="Item Code *" value={form.itemcode} onChange={(v) => setForm((f) => ({ ...f, itemcode: v }))} mono />
-                <FText label="Item Code 2" value={form.itemcode2} onChange={(v) => setForm((f) => ({ ...f, itemcode2: v }))} mono />
-                <FText label="Item Code 3" value={form.itemcode3} onChange={(v) => setForm((f) => ({ ...f, itemcode3: v }))} mono />
-                <FText label="Item Code 3 Type" value={form.itemcode3type} onChange={(v) => setForm((f) => ({ ...f, itemcode3type: v }))} />
-                <FText label="Tag" value={form.tag} onChange={(v) => setForm((f) => ({ ...f, tag: v }))} />
-                <FText label="Description (Long)" value={form.desclong} onChange={(v) => setForm((f) => ({ ...f, desclong: v }))} span2 />
-                <FText label="Query Text" value={form.querytext} onChange={(v) => setForm((f) => ({ ...f, querytext: v }))} span2 />
-              </EditSection>
-
-              <EditSection title="Classification">
-                <FText label="Department" value={form.deptcode} onChange={(v) => setForm((f) => ({ ...f, deptcode: v }))} />
-                <FText label="Class" value={form.classcode} onChange={(v) => setForm((f) => ({ ...f, classcode: v }))} />
-                <FSelect
-                  label="Category"
-                  value={form.categorycode}
-                  onChange={(v) => setForm((f) => ({ ...f, categorycode: v, subcategorycode: '' }))}
-                  options={catOptions.map((c) => ({ value: c.code, label: `${c.name} (${c.code})` }))}
-                  placeholder="Select category…"
-                />
-                <FSelect
-                  label="Sub-Category"
-                  value={form.subcategorycode}
-                  onChange={(v) => setForm((f) => ({ ...f, subcategorycode: v }))}
-                  options={subCatOptions
-                    .filter((s) =>
-                      form.categorycode ? s.category_code === form.categorycode : true
-                    )
-                    .map((s) => ({ value: s.code, label: `${s.name} (${s.code})` }))}
-                  placeholder={form.categorycode ? 'Select sub-category…' : 'Select a category first'}
-                  disabled={!form.categorycode}
-                />
-                <FText label="Group" value={form.group} onChange={(v) => setForm((f) => ({ ...f, group: v }))} />
-                <FText label="Size" value={form.size} onChange={(v) => setForm((f) => ({ ...f, size: v }))} />
-                <FText label="Color" value={form.color} onChange={(v) => setForm((f) => ({ ...f, color: v }))} />
-                <FText label="Style" value={form.style} onChange={(v) => setForm((f) => ({ ...f, style: v }))} />
-                <FText label="Item Type" value={form.item_type} onChange={(v) => setForm((f) => ({ ...f, item_type: v }))} />
-                <FText label="Form" value={form.form} onChange={(v) => setForm((f) => ({ ...f, form: v }))} />
-              </EditSection>
-
-              <EditSection title="Pricing">
-                <FNum label="Retail Price (₱) *" value={form.sell_price_rp} onChange={(v) => setForm((f) => ({ ...f, sell_price_rp: v ?? 0 }))} />
-                <FNum label="Wholesale Price (₱)" value={form.sell_price_ws} onChange={(v) => setForm((f) => ({ ...f, sell_price_ws: v ?? 0 }))} />
-                <FNum label="Price 2 (₱)" value={form.sell_price2} onChange={(v) => setForm((f) => ({ ...f, sell_price2: v ?? 0 }))} />
-                <FNum label="Price 3 (₱)" value={form.sell_price3} onChange={(v) => setForm((f) => ({ ...f, sell_price3: v ?? 0 }))} />
-                <FNum label="Price 4 (₱)" value={form.sell_price4} onChange={(v) => setForm((f) => ({ ...f, sell_price4: v ?? 0 }))} />
-                <FNum label="Price 5 (₱)" value={form.sell_price5} onChange={(v) => setForm((f) => ({ ...f, sell_price5: v ?? 0 }))} />
-                <FText label="UOM" value={form.sell_uom} onChange={(v) => setForm((f) => ({ ...f, sell_uom: v }))} />
-                <FText label="Pack" value={form.sell_pack} onChange={(v) => setForm((f) => ({ ...f, sell_pack: v }))} />
-                <FNum label="Pack Conversion" value={form.sell_packconv} onChange={(v) => setForm((f) => ({ ...f, sell_packconv: v ?? 0 }))} />
-                <FText label="Last Price Date" value={form.sell_lastdate ?? ''} onChange={(v) => setForm((f) => ({ ...f, sell_lastdate: v || null }))} placeholder="YYYY-MM-DD" />
-                <FText label="Dimension" value={form.sell_dimension} onChange={(v) => setForm((f) => ({ ...f, sell_dimension: v }))} />
-                <FText label="Weight" value={form.sell_weight} onChange={(v) => setForm((f) => ({ ...f, sell_weight: v }))} />
-              </EditSection>
-
-              <EditSection title="Stock">
-                <FNum label="Stock (SA)" value={form.stock_sa} onChange={(v) => setForm((f) => ({ ...f, stock_sa: v ?? 0 }))} />
-                <FNum label="Reorder Point" value={form.stock_rop} onChange={(v) => setForm((f) => ({ ...f, stock_rop: v ?? 0 }))} />
-                <FNum label="Stock Limit" value={form.stock_limit} onChange={(v) => setForm((f) => ({ ...f, stock_limit: v ?? 0 }))} />
-                <FNum label="On Order" value={form.stock_onorder} onChange={(v) => setForm((f) => ({ ...f, stock_onorder: v ?? 0 }))} />
-              </EditSection>
-
-              <EditSection title="Cost">
-                <FNum label="Unit Cost (₱)" value={form.unitcost} onChange={(v) => setForm((f) => ({ ...f, unitcost: v ?? 0 }))} />
-                <FNum label="Avg. Unit Cost (₱)" value={form.unitcostave} onChange={(v) => setForm((f) => ({ ...f, unitcostave: v ?? 0 }))} />
-                <FNum label="Acquisition Cost (₱)" value={form.acqcost} onChange={(v) => setForm((f) => ({ ...f, acqcost: v ?? 0 }))} />
-                <FNum label="Markup (Retail) (₱)" value={form.markup_rp} onChange={(v) => setForm((f) => ({ ...f, markup_rp: v ?? 0 }))} />
-                <FNum label="Markup (Wholesale) (₱)" value={form.markup_ws} onChange={(v) => setForm((f) => ({ ...f, markup_ws: v ?? 0 }))} />
-              </EditSection>
-
-              <EditSection title="Promotion">
-                <FNum label="Promo Price (Retail) (₱)" value={form.pro_priceret} onChange={(v) => setForm((f) => ({ ...f, pro_priceret: v ?? 0 }))} />
-                <FNum label="Promo Price (Wholesale) (₱)" value={form.pro_pricewhl} onChange={(v) => setForm((f) => ({ ...f, pro_pricewhl: v ?? 0 }))} />
-                <FNum label="Promo Cost (₱)" value={form.pro_cost} onChange={(v) => setForm((f) => ({ ...f, pro_cost: v ?? 0 }))} />
-                <div />
-                <FText label="Date From" value={form.pro_datefr ?? ''} onChange={(v) => setForm((f) => ({ ...f, pro_datefr: v || null }))} placeholder="YYYY-MM-DD" />
-                <FText label="Time From" value={form.pro_timefr} onChange={(v) => setForm((f) => ({ ...f, pro_timefr: v }))} placeholder="HH:MM:SS" />
-                <FText label="Date To" value={form.pro_dateto ?? ''} onChange={(v) => setForm((f) => ({ ...f, pro_dateto: v || null }))} placeholder="YYYY-MM-DD" />
-                <FText label="Time To" value={form.pro_timeto} onChange={(v) => setForm((f) => ({ ...f, pro_timeto: v }))} placeholder="HH:MM:SS" />
-              </EditSection>
-
-              <EditSection title="Supplier & Codes">
-                <FText label="Supplier Code" value={form.suppliercode} onChange={(v) => setForm((f) => ({ ...f, suppliercode: v }))} />
-                <FText label="Tax Code" value={form.taxcode} onChange={(v) => setForm((f) => ({ ...f, taxcode: v }))} />
-                <FText label="GL Code" value={form.glcode} onChange={(v) => setForm((f) => ({ ...f, glcode: v }))} />
-                <FText label="Inv. Code" value={form.invcode} onChange={(v) => setForm((f) => ({ ...f, invcode: v }))} />
-                <FText label="Price Type" value={form.pricetype} onChange={(v) => setForm((f) => ({ ...f, pricetype: v }))} />
-                <FText label="Barcode Type" value={form.barcodetype} onChange={(v) => setForm((f) => ({ ...f, barcodetype: v }))} />
-              </EditSection>
-
-              <EditSection title="Quantities & Misc">
-                <FNum label="Qty 1" value={form.sell_quantity1} onChange={(v) => setForm((f) => ({ ...f, sell_quantity1: v ?? 0 }))} />
-                <FNum label="Qty 2" value={form.sell_quantity2} onChange={(v) => setForm((f) => ({ ...f, sell_quantity2: v ?? 0 }))} />
-                <FNum label="Qty 3" value={form.sell_quantity3} onChange={(v) => setForm((f) => ({ ...f, sell_quantity3: v ?? 0 }))} />
-                <FNum label="Qty 4" value={form.sell_quantity4} onChange={(v) => setForm((f) => ({ ...f, sell_quantity4: v ?? 0 }))} />
-                <FNum label="Min. Wholesale Qty" value={form.minwhlsaleqty} onChange={(v) => setForm((f) => ({ ...f, minwhlsaleqty: v ?? 0 }))} />
-                <FNum label="Slow Factor" value={form.slowfactor} onChange={(v) => setForm((f) => ({ ...f, slowfactor: v ?? 0 }))} />
-                <FNum label="Fast Factor" value={form.fastfactor} onChange={(v) => setForm((f) => ({ ...f, fastfactor: v ?? 0 }))} />
-                <div />
-                <FText label="Planer ID" value={form.planerid} onChange={(v) => setForm((f) => ({ ...f, planerid: v }))} />
-                <FText label="Buyer ID" value={form.buyerid} onChange={(v) => setForm((f) => ({ ...f, buyerid: v }))} />
-                <FText label="Print To" value={form.printto} onChange={(v) => setForm((f) => ({ ...f, printto: v }))} />
-                <FText label="Picture File" value={form.picturefile} onChange={(v) => setForm((f) => ({ ...f, picturefile: v }))} />
-                <FText label="Info 1" value={form.info1} onChange={(v) => setForm((f) => ({ ...f, info1: v }))} span2 />
-                <FText label="Info 2" value={form.info2} onChange={(v) => setForm((f) => ({ ...f, info2: v }))} span2 />
-              </EditSection>
-
-              <EditSection title="Flags">
-                <FCheck label="Active" value={form.active} onChange={(v) => setForm((f) => ({ ...f, active: v }))} />
-                <FCheck label="Track Inventory" value={form.trackinventory} onChange={(v) => setForm((f) => ({ ...f, trackinventory: v }))} />
-                <FCheck label="With Serial" value={form.withserial} onChange={(v) => setForm((f) => ({ ...f, withserial: v }))} />
-                <FCheck label="Generic" value={form.generic} onChange={(v) => setForm((f) => ({ ...f, generic: v }))} />
-                <FCheck label="Measured" value={form.measured} onChange={(v) => setForm((f) => ({ ...f, measured: v }))} />
-                <FCheck label="With Alias" value={form.withalias} onChange={(v) => setForm((f) => ({ ...f, withalias: v }))} />
-                <FCheck label="Expiry Date" value={form.expirydate} onChange={(v) => setForm((f) => ({ ...f, expirydate: v }))} />
-                <FCheck label="Lot Number" value={form.lotnumber} onChange={(v) => setForm((f) => ({ ...f, lotnumber: v }))} />
-                <FCheck label="Auto Conversion" value={form.withautoconv} onChange={(v) => setForm((f) => ({ ...f, withautoconv: v }))} />
-                <FCheck label="Promo Allowed" value={form.pro_allowed} onChange={(v) => setForm((f) => ({ ...f, pro_allowed: v }))} />
-              </EditSection>
-
-            </div>
-
-            <div className="flex items-center gap-3 px-6 py-4 border-t border-neutral-100 flex-shrink-0">
-              <button onClick={() => setIsModalOpen(false)}
-                className="flex-1 py-2.5 text-sm font-semibold text-neutral-600
-                  bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors">
-                Cancel
-              </button>
-              <button onClick={handleSave}
-                disabled={isSaving || !form.descshort || !form.itemcode}
-                className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-600
-                  rounded-lg hover:bg-brand-800 transition-colors
-                  disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editingProduct ? 'Save Changes' : 'Add Product'}
-              </button>
-            </div>
-          </div>
-        </>
+      {/* ── Add Product UI preview (v2 tabbed dialog) — also handles Edit now ── */}
+      {isV2ModalOpen && (
+        <AddProductDialogV2
+          key={editingProduct?.id ?? 'new'}
+          open={isV2ModalOpen}
+          onClose={() => { setIsV2ModalOpen(false); setEditingProduct(null) }}
+          onCreated={(created) => setProducts((prev) => [created, ...prev])}
+          editingProduct={editingProduct}
+          onUpdated={(updated) => setProducts((prev) => prev.map((p) => p.id === updated.id ? updated : p))}
+        />
       )}
 
       {/* ── Delete confirm ── */}

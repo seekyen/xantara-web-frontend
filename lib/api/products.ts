@@ -41,8 +41,21 @@ export type ProductWritePayload = Omit<
   Product,
   | 'id' | 'total_stock' | 'is_below_rop' | 'is_on_promo'
   | 'createdby' | 'createddate' | 'updatedby' | 'updateddate'
-  | 'stock_book_sa' | 'stock_book_sr' | 'beg_balance_sa' | 'beg_balance_sr' | 'beg_cost'
->
+> & {
+  /** Actual image upload — separate from the legacy `picturefile` filename reference. */
+  image?: File
+}
+
+// The backend expects multipart/form-data (it accepts an image file alongside
+// the rest of the product fields) — JSON can't carry binary file data.
+function toFormData(data: Partial<ProductWritePayload>): FormData {
+  const form = new FormData()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    form.append(key, value instanceof File ? value : String(value))
+  })
+  return form
+}
 
 export async function createProduct(
   data: Partial<ProductWritePayload>,
@@ -50,7 +63,7 @@ export async function createProduct(
 ): Promise<Product> {
   return apiFetch<Product>('/api/v1/products/', {
     method: 'POST',
-    body:   JSON.stringify(data),
+    body:   toFormData(data),
   }, token)
 }
 
@@ -61,8 +74,67 @@ export async function updateProduct(
 ): Promise<Product> {
   return apiFetch<Product>(`/api/v1/products/${id}/`, {
     method: 'PATCH',
-    body:   JSON.stringify(data),
+    body:   toFormData(data),
   }, token)
+}
+
+/** Full replace — unlike updateProduct (PATCH), this expects the complete payload. */
+export async function replaceProduct(
+  id: number,
+  data: ProductWritePayload,
+  token?: string,
+): Promise<Product> {
+  return apiFetch<Product>(`/api/v1/products/${id}/`, {
+    method: 'PUT',
+    body:   toFormData(data),
+  }, token)
+}
+
+export async function getProduct(id: number, token?: string): Promise<Product> {
+  return apiFetch<Product>(`/api/v1/products/${id}/`, {}, token ?? undefined)
+}
+
+export async function deleteProduct(id: number, token?: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/products/${id}/`, { method: 'DELETE' }, token)
+}
+
+export interface ProductStockEntry {
+  branch_code:    string
+  stock_sa:       number
+  stock_sr:       number
+  stock_book_sa:  number
+  stock_book_sr:  number
+  beg_balance_sa: number
+  beg_balance_sr: number
+  stock_reserved: number
+  stock_rop:      number
+  stock_limit:    number
+  stock_onorder:  number
+  beg_cost:       number
+  updated_at:     string
+}
+
+/** Per-branch stock breakdown for a single product. */
+export async function getProductStock(id: number, token?: string): Promise<ProductStockEntry[]> {
+  return apiFetch<ProductStockEntry[]>(`/api/v1/products/${id}/stock/`, {}, token ?? undefined)
+}
+
+// Shape not yet confirmed against the real backend response — adjust once verified.
+export interface ProductStats {
+  total_products:     number
+  active_products:    number
+  inactive_products:  number
+  low_stock_count:    number
+  out_of_stock_count: number
+}
+
+export async function getProductStats(token?: string): Promise<ProductStats> {
+  return apiFetch<ProductStats>('/api/v1/products/stats/', {}, token ?? undefined)
+}
+
+/** Products currently below their reorder point (ProductStock.is_below_rop). */
+export async function getLowStockAlerts(token?: string): Promise<Product[]> {
+  return apiFetch<Product[]>('/api/v1/products/low_stock_alerts/', {}, token ?? undefined)
 }
 
 export async function getAllProducts(token?: string): Promise<Product[]> {
