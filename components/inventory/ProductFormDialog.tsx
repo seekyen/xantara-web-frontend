@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { type Product } from '@/lib/mock/products'
-import { type Category as CatOption, type SubCategory as SubCatOption } from '@/lib/api/categories'
+import { type Category as CatOption } from '@/lib/api/settings/category'
+import { type SubCategory as SubCatOption } from '@/lib/api/settings/subcategory'
 
 export type ProductFormData = Partial<Product>
 

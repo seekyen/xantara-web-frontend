@@ -1,221 +1,20 @@
 'use client'
 
-// TODO: Replace MOCK_DATA with API call → GET /api/v1/products/
-// All CRUD operations → POST/PATCH/DELETE /api/v1/products/
-
 import { useState, useEffect, useRef } from 'react'
 import {
   Package, AlertTriangle, XCircle, TrendingUp,
   Search, Pencil, Trash2, X, ChevronLeft, ChevronRight, Download, Plus, Loader2,
   Barcode as BarcodeIcon, Printer,
 } from 'lucide-react'
-import Swal                                     from 'sweetalert2'
 import { getStatus, type Product } from '@/lib/mock/products'
-import { createProduct, updateProduct, getAllProducts } from '@/lib/api/products'
 import BarcodePreview from '@/components/shared/BarcodePreview'
 import { getStoredBarcodeFormat } from '@/lib/barcodeFormat'
-import { getCategories, getSubCategories, type Category as CatOption, type SubCategory as SubCatOption } from '@/lib/api/categories'
+import { getCategories, type Category as CatOption } from '@/lib/api/settings/category'
 import { usePOS }       from '@/context/POSContext'
 import Badge            from '@/components/shared/Badge'
 import EmptyState       from '@/components/shared/EmptyState'
 import ConfirmModal     from '@/components/shared/ConfirmModal'
-import ProductFormDialog, { type ProductFormData } from '@/components/inventory/ProductFormDialog'
-import AddProductDialogV2 from '@/components/inventory/AddProductDialogV2'
-
-// ── Detail drawer helpers ────────────────────────────────────────────────────
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide">{label}</dt>
-      <dd className="mt-0.5 text-sm text-neutral-700 break-all">
-        {children !== '' && children !== null && children !== undefined && children !== 0
-          ? children
-          : <span className="text-neutral-300">—</span>}
-      </dd>
-    </div>
-  )
-}
-
-function BoolTag({ value }: { value: boolean }) {
-  return (
-    <span className={`inline-flex text-[10px] font-bold px-1.5 py-0.5 rounded ${
-      value ? 'bg-success-50 text-success-600' : 'bg-neutral-100 text-neutral-400'
-    }`}>{value ? 'Yes' : 'No'}</span>
-  )
-}
-
-function Rp({ value }: { value: number | string | undefined | null }) {
-  const n = Number(value)
-  return n ? <>₱{n.toLocaleString('en-PH')}</> : <span className="text-neutral-300">—</span>
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-3">
-      <h3 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest border-b border-neutral-100 pb-1.5">
-        {title}
-      </h3>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3">{children}</dl>
-    </div>
-  )
-}
-
-function ProductDetailDrawer({ product, onClose, catOptions, subCatOptions }: {
-  product: Product; onClose: () => void
-  catOptions: CatOption[]; subCatOptions: SubCatOption[]
-}) {
-  const status = getStatus(product)
-  return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-[600px] max-w-full z-50 bg-white shadow-2xl flex flex-col animate-slide-in-right">
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-neutral-100 flex-shrink-0">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-neutral-800">{product.descshort || product.itemcode}</h2>
-              <Badge variant={
-                status === 'Out of Stock' ? 'danger' :
-                status === 'Low Stock'    ? 'warning' : 'success'
-              }>{status}</Badge>
-              {product.is_on_promo && <Badge variant="success">On Promo</Badge>}
-            </div>
-            <p className="text-xs text-neutral-400 font-mono">{product.itemcode}</p>
-          </div>
-          <button onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-neutral-100 flex items-center justify-center transition-colors flex-shrink-0">
-            <X className="w-4 h-4 text-neutral-600" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-
-          <Section title="Identification">
-            <Field label="Item Code">{product.itemcode}</Field>
-            <Field label="Item Code 2">{product.itemcode2}</Field>
-            <Field label="Item Code 3">{product.itemcode3}</Field>
-            <Field label="Item Code 3 Type">{product.itemcode3type}</Field>
-            <Field label="Description (Short)">{product.descshort}</Field>
-            <Field label="Description (Long)">{product.desclong}</Field>
-            <Field label="Tag">{product.tag}</Field>
-            <Field label="Query Text">{product.querytext}</Field>
-          </Section>
-
-          <Section title="Classification">
-            <Field label="Department">{product.deptcode}</Field>
-            <Field label="Class">{product.classcode}</Field>
-            <Field label="Category">{catOptions.find((c) => c.code === product.categorycode)?.name ?? product.categorycode}</Field>
-            <Field label="Sub-Category">{subCatOptions.find((s) => s.code === product.subcategorycode)?.name ?? product.subcategorycode}</Field>
-            <Field label="Group">{product.group}</Field>
-            <Field label="Size">{product.size}</Field>
-            <Field label="Color">{product.color}</Field>
-            <Field label="Style">{product.style}</Field>
-            <Field label="Item Type">{product.item_type}</Field>
-            <Field label="Form">{product.form}</Field>
-          </Section>
-
-          <Section title="Pricing">
-            <Field label="Retail Price"><Rp value={product.sell_price_rp} /></Field>
-            <Field label="Wholesale Price"><Rp value={product.sell_price_ws} /></Field>
-            <Field label="Price 2"><Rp value={product.sell_price2} /></Field>
-            <Field label="Price 3"><Rp value={product.sell_price3} /></Field>
-            <Field label="Price 4"><Rp value={product.sell_price4} /></Field>
-            <Field label="Price 5"><Rp value={product.sell_price5} /></Field>
-            <Field label="UOM">{product.sell_uom}</Field>
-            <Field label="Pack">{product.sell_pack}</Field>
-            <Field label="Pack Conversion">{product.sell_packconv || null}</Field>
-            <Field label="Last Price Date">{product.sell_lastdate}</Field>
-            <Field label="Dimension">{product.sell_dimension}</Field>
-            <Field label="Weight">{product.sell_weight}</Field>
-          </Section>
-
-          <Section title="Stock">
-            <Field label="Stock (SA)">{product.stock_sa}</Field>
-            <Field label="Stock (SR)">{product.stock_sr}</Field>
-            <Field label="Total Stock">{product.total_stock}</Field>
-            <Field label="Reorder Point">{product.stock_rop}</Field>
-            <Field label="Stock Limit">{product.stock_limit || null}</Field>
-            <Field label="On Order">{product.stock_onorder || null}</Field>
-            <Field label="Reserved">{product.stock_reserved || null}</Field>
-            <Field label="Book Stock (SA)">{product.stock_book_sa || null}</Field>
-            <Field label="Book Stock (SR)">{product.stock_book_sr || null}</Field>
-            <Field label="Beg. Balance (SA)">{product.beg_balance_sa || null}</Field>
-            <Field label="Beg. Balance (SR)">{product.beg_balance_sr || null}</Field>
-            <Field label="Beg. Cost"><Rp value={product.beg_cost} /></Field>
-            <Field label="Track Inventory"><BoolTag value={product.trackinventory} /></Field>
-            <Field label="Below ROP"><BoolTag value={product.is_below_rop} /></Field>
-          </Section>
-
-          <Section title="Cost">
-            <Field label="Unit Cost"><Rp value={product.unitcost} /></Field>
-            <Field label="Avg. Unit Cost"><Rp value={product.unitcostave} /></Field>
-            <Field label="Acquisition Cost"><Rp value={product.acqcost} /></Field>
-            <Field label="Markup (Retail)"><Rp value={product.markup_rp} /></Field>
-            <Field label="Markup (Wholesale)"><Rp value={product.markup_ws} /></Field>
-          </Section>
-
-          <Section title="Promotion">
-            <Field label="On Promo"><BoolTag value={product.is_on_promo} /></Field>
-            <Field label="Promo Allowed"><BoolTag value={product.pro_allowed} /></Field>
-            <Field label="Promo Price (Retail)"><Rp value={product.pro_priceret} /></Field>
-            <Field label="Promo Price (Wholesale)"><Rp value={product.pro_pricewhl} /></Field>
-            <Field label="Promo Cost"><Rp value={product.pro_cost} /></Field>
-            <Field label="Date From">{product.pro_datefr}</Field>
-            <Field label="Time From">{product.pro_timefr}</Field>
-            <Field label="Date To">{product.pro_dateto}</Field>
-            <Field label="Time To">{product.pro_timeto}</Field>
-          </Section>
-
-          <Section title="Supplier & Codes">
-            <Field label="Supplier">{product.suppliercode}</Field>
-            <Field label="Tax Code">{product.taxcode}</Field>
-            <Field label="GL Code">{product.glcode}</Field>
-            <Field label="Inv. Code">{product.invcode}</Field>
-            <Field label="Price Type">{product.pricetype}</Field>
-            <Field label="Barcode Type">{product.barcodetype}</Field>
-          </Section>
-
-          <Section title="Quantities & Misc">
-            <Field label="Qty 1">{product.sell_quantity1 || null}</Field>
-            <Field label="Qty 2">{product.sell_quantity2 || null}</Field>
-            <Field label="Qty 3">{product.sell_quantity3 || null}</Field>
-            <Field label="Qty 4">{product.sell_quantity4 || null}</Field>
-            <Field label="Min. Wholesale Qty">{product.minwhlsaleqty || null}</Field>
-            <Field label="Slow Factor">{product.slowfactor || null}</Field>
-            <Field label="Fast Factor">{product.fastfactor || null}</Field>
-            <Field label="Planer ID">{product.planerid}</Field>
-            <Field label="Buyer ID">{product.buyerid}</Field>
-            <Field label="Print To">{product.printto}</Field>
-            <Field label="Info 1">{product.info1}</Field>
-            <Field label="Info 2">{product.info2}</Field>
-            <Field label="Picture File">{product.picturefile}</Field>
-          </Section>
-
-          <Section title="Flags">
-            <Field label="Active"><BoolTag value={product.active} /></Field>
-            <Field label="With Serial"><BoolTag value={product.withserial} /></Field>
-            <Field label="Generic"><BoolTag value={product.generic} /></Field>
-            <Field label="Measured"><BoolTag value={product.measured} /></Field>
-            <Field label="With Alias"><BoolTag value={product.withalias} /></Field>
-            <Field label="Expiry Date"><BoolTag value={product.expirydate} /></Field>
-            <Field label="Lot Number"><BoolTag value={product.lotnumber} /></Field>
-            <Field label="Auto Conversion"><BoolTag value={product.withautoconv} /></Field>
-          </Section>
-
-          <Section title="Audit">
-            <Field label="Created By">{product.createdby}</Field>
-            <Field label="Created Date">{product.createddate}</Field>
-            <Field label="Updated By">{product.updatedby}</Field>
-            <Field label="Updated Date">{product.updateddate}</Field>
-          </Section>
-
-        </div>
-      </div>
-    </>
-  )
-}
+import ProductDialog    from '@/components/inventory/ProductDialog'
 
 // ── Barcode modal ─────────────────────────────────────────────────────────────
 
@@ -300,18 +99,13 @@ export default function InventoryPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([])
 
   // ── Add / Edit modal ──
-  const [isModalOpen,    setIsModalOpen]    = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
 
-  // ── Add Product UI preview (v2 tabbed dialog, no backend wiring yet) ──
-  const [isV2ModalOpen, setIsV2ModalOpen] = useState(false)
-  const [isSaving,       setIsSaving]       = useState(false)
+  // ── Add / Edit / View Product dialog ──
+  const [isProductDialogOpen, setIsProductDialogOpen] = useState(false)
 
   // Default barcode format comes from Settings > General > Barcode & QR Setup.
   const [barcodeFormat] = useState(() => getStoredBarcodeFormat())
-
-  // ── Detail drawer ──
-  const [selectedProduct,  setSelectedProduct]  = useState<Product | null>(null)
 
   // ── Barcode modal ──
   const [barcodeProduct,   setBarcodeProduct]   = useState<Product | null>(null)
@@ -322,14 +116,12 @@ export default function InventoryPage() {
   // ── Alert banner ──
   const [showBanner, setShowBanner] = useState(true)
 
-  // ── Category / Sub-category options ──
-  const [catOptions,    setCatOptions]    = useState<CatOption[]>([])
-  const [subCatOptions, setSubCatOptions] = useState<SubCatOption[]>([])
+  // ── Category options (for the table's Category column + filter) ──
+  const [catOptions, setCatOptions] = useState<CatOption[]>([])
 
   useEffect(() => {
     const t = localStorage.getItem('xantara_pos_access') ?? undefined
     getCategories(t).then(setCatOptions).catch(() => {})
-    getSubCategories(t).then(setSubCatOptions).catch(() => {})
   }, [])
 
   // ── Derived stats ──
@@ -381,52 +173,8 @@ export default function InventoryPage() {
   }
 
   // ── Modal handlers ──
-  const openAdd  = () => { setEditingProduct(null); setIsModalOpen(true) }
-  // Edit now opens the new tabbed UI (AddProductDialogV2) instead of the old dialog.
-  const openEdit = (p: Product) => { setEditingProduct(p); setIsV2ModalOpen(true) }
-
-  const handleSave = async (form: ProductFormData) => {
-    const token = localStorage.getItem('xantara_pos_access') ?? undefined
-    const {
-      id: _id, total_stock: _ts, is_below_rop: _br, is_on_promo: _promo,
-      createdby: _cb, createddate: _cd, updatedby: _ub, updateddate: _ud,
-      stock_book_sa: _bsa, stock_book_sr: _bsr,
-      beg_balance_sa: _bbsa, beg_balance_sr: _bbsr, beg_cost: _bc,
-      ...payload
-    } = form
-    setIsSaving(true)
-    try {
-      if (editingProduct) {
-        const updated = await updateProduct(editingProduct.id, payload, token)
-        setProducts((prev) => prev.map((p) => p.id === editingProduct.id ? updated : p))
-      } else {
-        const created = await createProduct(payload, token)
-        setProducts((prev) => [created, ...prev])
-      }
-      setIsModalOpen(false)
-      const fresh = await getAllProducts(token)
-      setProducts(fresh)
-      Swal.fire({
-        icon:                'success',
-        title:               editingProduct ? 'Product updated!' : 'Product added!',
-        showConfirmButton:   false,
-        timer:               1800,
-        timerProgressBar:    true,
-      })
-    } catch (err) {
-      const body = (err as { body?: Record<string, unknown> })?.body
-      const detail = body
-        ? Object.entries(body).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
-        : (err instanceof Error ? err.message : String(err))
-      Swal.fire({
-        icon:  'error',
-        title: 'Save failed',
-        text:  detail,
-      })
-    } finally {
-      setIsSaving(false)
-    }
-  }
+  // Add and Edit both open the new tabbed UI (ProductDialog) now.
+  const openEdit = (p: Product) => { setEditingProduct(p); setIsProductDialogOpen(true) }
 
   const openDelete    = (p: Product) => setDeleteTarget(p)
   const confirmDelete = () => {
@@ -452,20 +200,12 @@ export default function InventoryPage() {
             Export
           </button>
           <button
-            onClick={openAdd}
+            onClick={() => { setEditingProduct(null); setIsProductDialogOpen(true) }}
             className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white
               text-sm font-semibold rounded-xl hover:bg-brand-800 transition-colors"
           >
             <Plus className="w-4 h-4" />
             Add Product
-          </button>
-          <button
-            onClick={() => { setEditingProduct(null); setIsV2ModalOpen(true) }}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-brand-600
-              border border-brand-600 text-sm font-semibold rounded-xl hover:bg-brand-50 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Product (New UI)
           </button>
         </div>
       </div>
@@ -624,7 +364,7 @@ export default function InventoryPage() {
                 <tr
                   key={product.id ?? i}
                   className="hover:bg-neutral-50 transition-colors group cursor-pointer"
-                  onClick={() => setSelectedProduct(product)}
+                  onClick={() => openEdit(product)}
                 >
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selectedIds.includes(product.id)}
@@ -767,40 +507,17 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {/* ── Product detail drawer ── */}
-      {selectedProduct && (
-        <ProductDetailDrawer
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          catOptions={catOptions}
-          subCatOptions={subCatOptions}
-        />
-      )}
-
       {/* ── Barcode modal ── */}
       {barcodeProduct && (
         <BarcodeModal product={barcodeProduct} onClose={() => setBarcodeProduct(null)} />
       )}
 
-      {/* ── Add / Edit dialog ── */}
-      {isModalOpen && (
-        <ProductFormDialog
-          open={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSave={handleSave}
-          editingProduct={editingProduct}
-          isSaving={isSaving}
-          catOptions={catOptions}
-          subCatOptions={subCatOptions}
-        />
-      )}
-
-      {/* ── Add Product UI preview (v2 tabbed dialog) — also handles Edit now ── */}
-      {isV2ModalOpen && (
-        <AddProductDialogV2
+      {/* ── Add / Edit / View dialog ── */}
+      {isProductDialogOpen && (
+        <ProductDialog
           key={editingProduct?.id ?? 'new'}
-          open={isV2ModalOpen}
-          onClose={() => { setIsV2ModalOpen(false); setEditingProduct(null) }}
+          open={isProductDialogOpen}
+          onClose={() => { setIsProductDialogOpen(false); setEditingProduct(null) }}
           onCreated={(created) => setProducts((prev) => [created, ...prev])}
           editingProduct={editingProduct}
           onUpdated={(updated) => setProducts((prev) => prev.map((p) => p.id === updated.id ? updated : p))}

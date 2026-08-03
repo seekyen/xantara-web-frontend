@@ -41,3 +41,33 @@ export async function apiFetch<T>(
   if (!text) return undefined as T
   return JSON.parse(text) as T
 }
+
+export type PagedResponse<T> = {
+  count:    number
+  next:     string | null
+  previous: string | null
+  results:  T[]
+}
+
+/** Follows `next` across every page and returns the combined results — use for dropdowns. */
+export async function fetchAll<T>(path: string, token?: string): Promise<T[]> {
+  const results: T[] = []
+  let nextPath: string | null = path
+
+  while (nextPath) {
+    const data: T[] | PagedResponse<T> = await apiFetch<T[] | PagedResponse<T>>(nextPath, {}, token)
+    if (Array.isArray(data)) {
+      results.push(...data)
+      break
+    }
+    results.push(...data.results)
+    if (data.next) {
+      const u: URL = new URL(data.next)
+      nextPath = u.pathname + u.search
+    } else {
+      nextPath = null
+    }
+  }
+
+  return results
+}
