@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Store, CreditCard, Receipt, Percent, Bell, Shield, Server,
-  Check, RefreshCw, Tag, Search, Plus, X, Pencil, Trash2, Loader2,
+  Check, RefreshCw, Tag, Search, Plus, X, Pencil, Trash2, Loader2, SlidersHorizontal,
 } from 'lucide-react'
 import Swal from 'sweetalert2'
 import ConfirmModal from '@/components/shared/ConfirmModal'
@@ -12,12 +12,22 @@ import QRCodePreview from '@/components/shared/QRCodePreview'
 import { BARCODE_FORMATS, type BarcodeFormat, getStoredBarcodeFormat, setStoredBarcodeFormat } from '@/lib/barcodeFormat'
 import { QR_DOT_TYPES, QR_ERROR_CORRECTION_LEVELS, type QRStyleOptions, getStoredQRStyle, setStoredQRStyle } from '@/lib/qrStyle'
 import {
-  type Category, type SubCategory,
+  type Category,
   getCategories, getCategoriesPaged,
   createCategory, updateCategory, deleteCategory,
+} from '@/lib/api/settings/category'
+import {
+  type SubCategory,
   getSubCategories, getSubCategoriesPaged,
   createSubCategory, updateSubCategory, deleteSubCategory,
-} from '@/lib/api/categories'
+} from '@/lib/api/settings/subcategory'
+import type { PagedResponse } from '@/lib/api/client'
+import { type ItemClass, getClassesPaged, createClass, updateClass, deleteClass } from '@/lib/api/settings/class'
+import { type Size,      getSizesPaged,   createSize,  updateSize,  deleteSize  } from '@/lib/api/settings/size'
+import { type Color,     getColorsPaged,  createColor, updateColor, deleteColor } from '@/lib/api/settings/color'
+import { type Unit,      getUnitsPaged,   createUnit,  updateUnit,  deleteUnit  } from '@/lib/api/settings/unit'
+import { type ItemForm,  getFormsPaged,   createForm,  updateForm,  deleteForm  } from '@/lib/api/settings/form'
+import { type ItemType,  getItemTypesPaged, createItemType, updateItemType, deleteItemType } from '@/lib/api/settings/itemType'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -35,7 +45,34 @@ const TABS = [
   { id: 'security',      label: 'Security',       icon: Shield     },
   { id: 'system',        label: 'System',         icon: Server     },
   { id: 'categories',    label: 'Categories',     icon: Tag        },
+  { id: 'attributes',    label: 'Item Attributes', icon: SlidersHorizontal },
 ]
+
+// ── Item Attributes ──────────────────────────────────────────────────────────
+// Class, Size, Color, Unit, Form, and Type all share the exact same shape and
+// CRUD pattern — one consolidated set of state + handlers drives all 6, switched
+// via `attrKind`, instead of repeating the same state block six times.
+
+type AttrKind = 'class' | 'size' | 'color' | 'unit' | 'form' | 'itemType'
+type AttrItem = ItemClass | Size | Color | Unit | ItemForm | ItemType
+
+interface AttrConfig {
+  label:    string
+  getPaged: (page: number, token?: string) => Promise<PagedResponse<AttrItem>>
+  create:   (data: { name: string; is_active?: boolean }, token?: string) => Promise<AttrItem>
+  update:   (id: number, data: { name?: string; is_active?: boolean }, token?: string) => Promise<AttrItem>
+  remove:   (id: number, token?: string) => Promise<AttrItem>
+}
+
+const ATTR_CONFIG: Record<AttrKind, AttrConfig> = {
+  class:    { label: 'Class', getPaged: getClassesPaged,   create: createClass,    update: updateClass,    remove: deleteClass    },
+  size:     { label: 'Size',  getPaged: getSizesPaged,     create: createSize,     update: updateSize,     remove: deleteSize     },
+  color:    { label: 'Color', getPaged: getColorsPaged,    create: createColor,    update: updateColor,    remove: deleteColor    },
+  unit:     { label: 'Unit',  getPaged: getUnitsPaged,     create: createUnit,     update: updateUnit,     remove: deleteUnit     },
+  form:     { label: 'Form',  getPaged: getFormsPaged,     create: createForm,     update: updateForm,     remove: deleteForm     },
+  itemType: { label: 'Type',  getPaged: getItemTypesPaged, create: createItemType, update: updateItemType, remove: deleteItemType },
+}
+const ATTR_KINDS = Object.keys(ATTR_CONFIG) as AttrKind[]
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
@@ -178,6 +215,20 @@ export default function SettingsPage() {
   const [subForm,      setSubForm]      = useState({ name: '', categoryCode: '', is_active: true })
   const [subDelTarget, setSubDelTarget] = useState<SubCategory | null>(null)
 
+  // ── Item Attributes (Class/Size/Color/Unit/Form/Type — one shared state block) ──
+  const [attrKind,     setAttrKind]     = useState<AttrKind>('class')
+  const [attrItems,    setAttrItems]    = useState<AttrItem[]>([])
+  const [attrLoading,  setAttrLoading]  = useState(false)
+  const [isSavingAttr, setIsSavingAttr] = useState(false)
+  const [attrSearch,   setAttrSearch]   = useState('')
+  const [attrPage,     setAttrPage]     = useState(1)
+  const [attrCount,    setAttrCount]    = useState(0)
+  const [attrHasNext,  setAttrHasNext]  = useState(false)
+  const [attrDrawer,   setAttrDrawer]   = useState(false)
+  const [attrEditId,   setAttrEditId]   = useState<number | null>(null)
+  const [attrForm,     setAttrForm]     = useState({ name: '', is_active: true })
+  const [attrDelTarget, setAttrDelTarget] = useState<AttrItem | null>(null)
+
   const token = () => localStorage.getItem('xantara_pos_access') ?? undefined
 
   const loadCats = useCallback(async () => {
@@ -297,6 +348,69 @@ export default function SettingsPage() {
       toast('Failed to update sub-category', 'error')
     }
   }
+
+  // Item Attributes handlers
+  const loadAttrs = useCallback(async () => {
+    setAttrLoading(true)
+    try {
+      const data = await ATTR_CONFIG[attrKind].getPaged(attrPage, token())
+      setAttrItems(data.results)
+      setAttrCount(data.count)
+      setAttrHasNext(data.next !== null)
+    } catch { toast(`Failed to load ${ATTR_CONFIG[attrKind].label.toLowerCase()}`, 'error') }
+    finally { setAttrLoading(false) }
+  }, [attrKind, attrPage])
+
+  useEffect(() => {
+    if (tab === 'attributes') loadAttrs()
+  }, [tab, loadAttrs])
+
+  const switchAttrKind = (k: AttrKind) => { setAttrKind(k); setAttrPage(1); setAttrSearch('') }
+
+  const openAddAttr  = () => { setAttrEditId(null); setAttrForm({ name: '', is_active: true }); setAttrDrawer(true) }
+  const openEditAttr = (item: AttrItem) => { setAttrEditId(item.id); setAttrForm({ name: item.name, is_active: item.is_active }); setAttrDrawer(true) }
+
+  const saveAttr = async () => {
+    if (!attrForm.name.trim()) return toast('Name is required', 'error')
+    const cfg = ATTR_CONFIG[attrKind]
+    setIsSavingAttr(true)
+    try {
+      if (attrEditId !== null) {
+        await cfg.update(attrEditId, { name: attrForm.name, is_active: attrForm.is_active }, token())
+        toast(`${cfg.label} updated!`)
+      } else {
+        await cfg.create({ name: attrForm.name }, token())
+        toast(`${cfg.label} added!`)
+      }
+      setAttrDrawer(false)
+      loadAttrs()
+    } catch {
+      toast(`Failed to save ${cfg.label.toLowerCase()}`, 'error')
+    } finally {
+      setIsSavingAttr(false)
+    }
+  }
+
+  const confirmDeleteAttr = async () => {
+    if (!attrDelTarget) return
+    const cfg = ATTR_CONFIG[attrKind]
+    const wasActive = attrDelTarget.is_active
+    try {
+      await cfg.remove(attrDelTarget.id, token())
+      setAttrDelTarget(null)
+      toast(wasActive ? `${cfg.label} deactivated.` : `${cfg.label} activated.`)
+      loadAttrs()
+    } catch {
+      setAttrDelTarget(null)
+      toast(`Failed to update ${cfg.label.toLowerCase()}`, 'error')
+    }
+  }
+
+  const filteredAttrs = attrItems.filter((i) =>
+    attrSearch
+      ? i.name.toLowerCase().includes(attrSearch.toLowerCase()) || i.code.toLowerCase().includes(attrSearch.toLowerCase())
+      : true,
+  )
 
   // Filtered lists
   const filteredCats = categories.filter((c) =>
@@ -960,6 +1074,128 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* ── ITEM ATTRIBUTES ── */}
+          {tab === 'attributes' && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-sm font-bold text-neutral-800">Item Attributes</h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Shared reference lists used across Add Product — Class, Size, Color, Unit, Form, and Type.
+                </p>
+              </div>
+
+              {/* Kind switcher */}
+              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-0.5 w-fit flex-wrap">
+                {ATTR_KINDS.map((k) => (
+                  <button key={k} onClick={() => switchAttrKind(k)}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all
+                      ${attrKind === k ? 'bg-white text-neutral-800 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}>
+                    {ATTR_CONFIG[k].label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Toolbar */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+                  <input
+                    type="text" placeholder="Search by name or code…"
+                    value={attrSearch} onChange={(e) => setAttrSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                  />
+                </div>
+                <button onClick={openAddAttr}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-800 transition-colors">
+                  <Plus className="w-4 h-4" /> Add {ATTR_CONFIG[attrKind].label}
+                </button>
+              </div>
+
+              {/* Table */}
+              {attrLoading ? (
+                <div className="flex items-center justify-center gap-2 py-16 text-neutral-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Loading…</span>
+                </div>
+              ) : filteredAttrs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="w-12 h-12 rounded-full bg-neutral-100 flex items-center justify-center mb-3">
+                    <SlidersHorizontal className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  <p className="text-sm font-medium text-neutral-600">No {ATTR_CONFIG[attrKind].label.toLowerCase()} yet</p>
+                  <p className="text-xs text-neutral-400 mt-1">Click &quot;Add {ATTR_CONFIG[attrKind].label}&quot; to create your first one</p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-neutral-200 overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-neutral-50 border-b border-neutral-100">
+                        <th className="px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide text-left">Code</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide text-left">Name</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide text-center">Status</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {filteredAttrs.map((item) => (
+                        <tr key={item.id} className="hover:bg-neutral-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <span className="font-mono text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded">
+                              {item.code}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-neutral-800">{item.name}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
+                              ${item.is_active ? 'bg-success-50 text-success-700' : 'bg-neutral-100 text-neutral-400'}`}>
+                              {item.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => openEditAttr(item)}
+                                className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-brand-50 text-neutral-400 hover:text-brand-600 transition-colors">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => setAttrDelTarget(item)}
+                                className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-danger-50 text-neutral-400 hover:text-danger-600 transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Pagination */}
+              {!attrLoading && attrCount > 0 && (
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs text-neutral-400">{attrCount} total</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setAttrPage((p) => p - 1)}
+                      disabled={attrPage === 1}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg border border-neutral-200
+                        text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      Prev
+                    </button>
+                    <span className="px-2 text-xs text-neutral-600 font-medium">Page {attrPage}</span>
+                    <button
+                      onClick={() => setAttrPage((p) => p + 1)}
+                      disabled={!attrHasNext}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg border border-neutral-200
+                        text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
 
@@ -997,6 +1233,21 @@ export default function SettingsPage() {
           ? `"${subDelTarget?.name}" will be hidden from dropdowns.`
           : `"${subDelTarget?.name}" will be available again in dropdowns.`}
         confirmLabel={subDelTarget?.is_active ? 'Deactivate' : 'Activate'}
+        variant="danger"
+      />
+
+      {/* ── Item Attribute toggle confirm ── */}
+      <ConfirmModal
+        isOpen={!!attrDelTarget}
+        onClose={() => setAttrDelTarget(null)}
+        onConfirm={confirmDeleteAttr}
+        title={attrDelTarget?.is_active
+          ? `Deactivate ${ATTR_CONFIG[attrKind].label.toLowerCase()}?`
+          : `Activate ${ATTR_CONFIG[attrKind].label.toLowerCase()}?`}
+        message={attrDelTarget?.is_active
+          ? `"${attrDelTarget?.name}" will be hidden from dropdowns.`
+          : `"${attrDelTarget?.name}" will be available again in dropdowns.`}
+        confirmLabel={attrDelTarget?.is_active ? 'Deactivate' : 'Activate'}
         variant="danger"
       />
 
@@ -1115,6 +1366,58 @@ export default function SettingsPage() {
             {subEditId !== null ? 'Update Sub-Category' : 'Add Sub-Category'}
           </button>
           <button onClick={() => setSubDrawer(false)}
+            className="px-5 py-2.5 text-sm font-semibold text-neutral-600 bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors">
+            Cancel
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Item Attribute drawer backdrop ── */}
+      <div onClick={() => setAttrDrawer(false)}
+        className={`fixed inset-0 z-40 bg-black/30 transition-opacity duration-300
+          ${attrDrawer ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} />
+
+      {/* ── Item Attribute drawer ── */}
+      <aside className={`fixed top-0 right-0 h-full w-[380px] z-50 bg-white shadow-2xl flex flex-col
+        transition-transform duration-300 ease-in-out
+        ${attrDrawer ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-neutral-100">
+          <h2 className="text-base font-bold text-neutral-800">
+            {attrEditId ? `Edit ${ATTR_CONFIG[attrKind].label}` : `New ${ATTR_CONFIG[attrKind].label}`}
+          </h2>
+          <button onClick={() => setAttrDrawer(false)}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+          <div>
+            <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
+              {ATTR_CONFIG[attrKind].label} Name <span className="text-danger-600">*</span>
+            </label>
+            <input
+              value={attrForm.name}
+              onChange={(e) => setAttrForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder={`e.g. ${attrKind === 'class' ? 'Footwear' : attrKind === 'size' ? 'Medium' : attrKind === 'color' ? 'Black' : attrKind === 'unit' ? 'Piece' : attrKind === 'form' ? 'Solid' : 'Retail'}`}
+              className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+            />
+            <p className="text-[10px] text-neutral-400 mt-1">Code is auto-generated by the server.</p>
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Active</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Will appear in Add Product dropdowns</p>
+            </div>
+            <Toggle checked={attrForm.is_active} onChange={(v) => setAttrForm((f) => ({ ...f, is_active: v }))} />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-neutral-100 flex gap-2">
+          <button onClick={saveAttr} disabled={isSavingAttr}
+            className="flex-1 py-2.5 text-sm font-semibold bg-brand-600 text-white rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {isSavingAttr && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {attrEditId !== null ? `Update ${ATTR_CONFIG[attrKind].label}` : `Add ${ATTR_CONFIG[attrKind].label}`}
+          </button>
+          <button onClick={() => setAttrDrawer(false)}
             className="px-5 py-2.5 text-sm font-semibold text-neutral-600 bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors">
             Cancel
           </button>

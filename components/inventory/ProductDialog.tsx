@@ -16,6 +16,21 @@ import { type BarcodeFormat, getStoredBarcodeFormat } from '@/lib/barcodeFormat'
 import { type QRStyleOptions, getStoredQRStyle } from '@/lib/qrStyle'
 import { createProduct, updateProduct, type ProductWritePayload } from '@/lib/api/products'
 import { type Product } from '@/lib/mock/products'
+import { getDepartments } from '@/lib/api/settings/department'
+import { getCategories, createCategory } from '@/lib/api/settings/category'
+import { type SubCategory, getSubCategories, createSubCategory } from '@/lib/api/settings/subcategory'
+import { getClasses, createClass } from '@/lib/api/settings/class'
+import { getSizes, createSize } from '@/lib/api/settings/size'
+import { getColors, createColor } from '@/lib/api/settings/color'
+import { getUnits, createUnit } from '@/lib/api/settings/unit'
+import { getForms, createForm } from '@/lib/api/settings/form'
+import { getItemTypes, createItemType } from '@/lib/api/settings/itemType'
+
+// Active-only "Name (CODE)" labels — matches the "(CODE)" convention InlineDropdownField
+// already parses (extractCode/findOptionByCode), so real API data drops in with no other changes.
+function toOptions(items: { name: string; code: string; is_active: boolean }[]): string[] {
+  return items.filter((i) => i.is_active).map((i) => `${i.name} (${i.code})`)
+}
 
 // Extracts the trailing "(CODE)" portion of a mock option label (e.g. "Beverages (BEVE)" → "BEVE").
 // Falls back to the raw label if there's no parenthesized code.
@@ -34,12 +49,12 @@ function findOptionByCode(options: string[], code?: string): string {
 const TABS = ['Item Definitions', 'Item Information', 'Purchasing', 'Pricing'] as const
 type Tab = typeof TABS[number]
 
-interface AddProductDialogV2Props {
+interface ProductDialogProps {
   open:      boolean
   onClose:   () => void
   /** Called with the newly created product after a successful save, so the parent list can refresh. */
   onCreated?: (product: Product) => void
-  /** Product being edited — omit/null for Add mode. Pass a stable `key` at the call site
+  /** Product being viewed/edited — omit/null for Add mode. Pass a stable `key` at the call site
    *  (e.g. `key={editingProduct?.id ?? 'new'}`) so the dialog remounts fresh per product. */
   editingProduct?: Product | null
   /** Called with the updated product after a successful save in Edit mode. */
@@ -108,28 +123,65 @@ function InlineField({ label, labelWidth = 'w-28', span2, disabled, defaultValue
 
 // Small "Add <Label>" modal — UI-only preview (no backend yet), used by the
 // "+ Add …" option at the bottom of each InlineDropdownField.
-function AddEntityModal({ label, open, onClose }: { label: string; open: boolean; onClose: () => void }) {
+// If `onSubmit` is given, Save actually persists via the real API (and only closes on
+// success — errors show a SweetAlert2 and keep the modal open). Without it, this stays a
+// UI-only placeholder for dropdowns that don't have a backing lookup API yet.
+function AddEntityModal({ label, open, onClose, onSubmit }: {
+  label: string; open: boolean; onClose: () => void; onSubmit?: (name: string) => Promise<void>
+}) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+
   if (!open) return null
+
+  // Reset on the way out (not via an open-triggered effect) so the field is blank
+  // next time, regardless of whether it closed via Cancel or a successful Save.
+  const close = () => { setName(''); onClose() }
+
+  const handleSave = async () => {
+    if (!name.trim()) return
+    if (!onSubmit) { close(); return }
+    setSaving(true)
+    try {
+      await onSubmit(name.trim())
+      close()
+      Swal.fire({
+        icon:              'success',
+        title:             `${label} added!`,
+        showConfirmButton: false,
+        timer:             1600,
+        timerProgressBar:  true,
+      })
+    } catch (err) {
+      const title = err instanceof Error ? err.message : `Failed to add ${label.toLowerCase()}`
+      Swal.fire({ icon: 'error', title })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <>
-      <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm" onClick={close} />
       <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-none">
         <div onClick={(e) => e.stopPropagation()}
           className="pointer-events-auto bg-white rounded-xl shadow-2xl w-80 p-5 flex flex-col gap-4">
           <h3 className="text-sm font-bold text-neutral-800">Add {label}</h3>
           <div>
             <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-1">{label} Name</label>
-            <input type="text" autoFocus placeholder={`Enter ${label.toLowerCase()} name…`}
+            <input type="text" autoFocus value={name} onChange={(e) => setName(e.target.value)}
+              placeholder={`Enter ${label.toLowerCase()} name…`}
               className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-md
                 focus:outline-none focus:ring-2 focus:ring-brand-600" />
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={onClose}
-              className="flex-1 py-2 text-sm font-semibold text-neutral-600 bg-neutral-100 rounded-md hover:bg-neutral-200 transition-colors">
+            <button type="button" onClick={close} disabled={saving}
+              className="flex-1 py-2 text-sm font-semibold text-neutral-600 bg-neutral-100 rounded-md hover:bg-neutral-200 transition-colors disabled:opacity-50">
               Cancel
             </button>
-            <button type="button" onClick={onClose}
-              className="flex-1 py-2 text-sm font-semibold text-white bg-brand-600 rounded-md hover:bg-brand-800 transition-colors">
+            <button type="button" onClick={handleSave} disabled={saving || !name.trim()}
+              className="flex-1 py-2 text-sm font-semibold text-white bg-brand-600 rounded-md hover:bg-brand-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Save
             </button>
           </div>
@@ -142,11 +194,24 @@ function AddEntityModal({ label, open, onClose }: { label: string; open: boolean
 // Same inline label-left layout as InlineField, but a searchable combobox — used
 // for Row 2's "Name (Code)" dropdowns so it matches Row 3's field style. The
 // "+ Add <Label>" action sits right under the search box, above the results, and
-// opens a small add-entity modal (UI preview only).
-function InlineDropdownField({ label, options, labelWidth = 'w-28', defaultValue, name }: {
+// opens a small add-entity modal. Pass `onAddNew` to persist the new entry via the
+// real lookup API (and auto-select it); omit it to keep the add flow UI-only.
+function InlineDropdownField({ label, options, labelWidth = 'w-28', defaultValue, name, onAddNew, onChange }: {
   label: string; options: string[]; labelWidth?: string; defaultValue?: string; name?: string
+  /** Persists a new entry via the real lookup API and returns its "Name (CODE)" label. */
+  onAddNew?: (name: string) => Promise<string>
+  /** Called with the selected "Name (CODE)" label whenever it changes — used to drive dependent dropdowns. */
+  onChange?: (value: string) => void
 }) {
-  const [value, setValue] = useState(defaultValue ?? '')
+  // `selectedValue` is only set once the user actively picks/adds something. Until then,
+  // `value` is derived from defaultValue + options on every render — so it naturally
+  // resolves the real "Name (CODE)" label once async-fetched options arrive, even if
+  // this mounted (edit mode) before that fetch finished. No effect/sync needed.
+  const [selectedValue, setSelectedValue] = useState<string | null>(null)
+  const value = selectedValue ?? (defaultValue
+    ? options.find((o) => extractCode(o) === extractCode(defaultValue)) ?? defaultValue
+    : '')
+  const setValue = (v: string) => { setSelectedValue(v); onChange?.(v) }
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [addOpen, setAddOpen] = useState(false)
@@ -214,46 +279,94 @@ function InlineDropdownField({ label, options, labelWidth = 'w-28', defaultValue
           </div>
         )}
       </div>
-      <AddEntityModal label={label} open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddEntityModal label={label} open={addOpen} onClose={() => setAddOpen(false)}
+        onSubmit={onAddNew ? async (n) => { setValue(await onAddNew(n)) } : undefined} />
     </div>
   )
 }
 
-function Row2({ editingProduct }: { editingProduct?: Product | null }) {
+interface Row2DropdownOptions {
+  dept:    string[]
+  class:   string[]
+  cat:     string[]
+  size:    string[]
+  color:   string[]
+  unit:    string[]
+  form:    string[]
+  type:    string[]
+}
+
+// "+ Add" handlers for the 7 dropdowns backed by a simple name-only lookup API.
+// Department needs an extra required parent field (class_name) so its "+ Add" stays
+// UI-only for now. Sub-Category's add flow is handled locally inside Row2 instead —
+// it needs whichever Category is currently selected, which lives as Row2-local state.
+interface Row2AddHandlers {
+  class: (name: string) => Promise<string>
+  cat:   (name: string) => Promise<string>
+  size:  (name: string) => Promise<string>
+  color: (name: string) => Promise<string>
+  unit:  (name: string) => Promise<string>
+  form:  (name: string) => Promise<string>
+  type:  (name: string) => Promise<string>
+}
+
+function Row2({ editingProduct, dropdownOptions: opt, addHandlers: add, subCategories, onSubCategoryCreated }: {
+  editingProduct?: Product | null; dropdownOptions: Row2DropdownOptions; addHandlers: Row2AddHandlers
+  subCategories: SubCategory[]; onSubCategoryCreated: (s: SubCategory) => void
+}) {
   const ep = editingProduct
+  // Category → Sub-Category are interconnected: picking a Category narrows Sub-Category
+  // to only its children (real category_code relationship, not just a flat list).
+  const [selectedCategoryCode, setSelectedCategoryCode] = useState(ep?.categorycode ?? '')
+  const subCatOptions = subCategories
+    .filter((s) => s.is_active && (!selectedCategoryCode || s.category_code === selectedCategoryCode))
+    .map((s) => `${s.name} (${s.code})`)
+
+  const handleAddSubCategory = async (name: string) => {
+    if (!selectedCategoryCode) throw new Error('Select a Category first.')
+    const created = await createSubCategory(
+      { name, category_code: selectedCategoryCode },
+      localStorage.getItem('xantara_pos_access') ?? undefined,
+    )
+    onSubCategoryCreated(created)
+    return `${created.name} (${created.code})`
+  }
+
   return (
     <fieldset className="grid grid-cols-1 xl:grid-cols-2 gap-4 border border-neutral-200 rounded-lg p-2 flex-shrink-0 m-0">
       <legend className="px-2 text-xs font-semibold text-neutral-500">Item Info</legend>
       {/* left column */}
       <div className="flex flex-col gap-1.5">
-        <InlineDropdownField label="Department"   name="deptcode"        options={['Beverages (BEVE)', 'Apparel (APRL)']}
-          defaultValue={findOptionByCode(['Beverages (BEVE)', 'Apparel (APRL)'], ep?.deptcode)} />
-        <InlineDropdownField label="Class"        name="classcode"       options={['Footwear (FTWR)', 'Accessories (ACCS)']}
-          defaultValue={findOptionByCode(['Footwear (FTWR)', 'Accessories (ACCS)'], ep?.classcode)} />
-        <InlineDropdownField label="Category"     name="categorycode"    options={['Bags (BAGS)', 'Tops (TOPS)']}
-          defaultValue={findOptionByCode(['Bags (BAGS)', 'Tops (TOPS)'], ep?.categorycode)} />
-        <InlineDropdownField label="Sub-Category" name="subcategorycode" options={['Casual (CAS)', 'Formal (FRM)']}
-          defaultValue={findOptionByCode(['Casual (CAS)', 'Formal (FRM)'], ep?.subcategorycode)} />
-        <InlineDropdownField label="Size"         name="size"            options={['Small (S)', 'Medium (M)', 'Large (L)']}
-          defaultValue={findOptionByCode(['Small (S)', 'Medium (M)', 'Large (L)'], ep?.size)} />
-        <InlineDropdownField label="Color"        name="color"           options={['Black (BLK)', 'White (WHT)']}
-          defaultValue={findOptionByCode(['Black (BLK)', 'White (WHT)'], ep?.color)} />
+        <InlineDropdownField label="Department"   name="deptcode"        options={opt.dept}
+          defaultValue={findOptionByCode(opt.dept, ep?.deptcode)} />
+        <InlineDropdownField label="Class"        name="classcode"       options={opt.class} onAddNew={add.class}
+          defaultValue={findOptionByCode(opt.class, ep?.classcode)} />
+        <InlineDropdownField label="Category"     name="categorycode"    options={opt.cat} onAddNew={add.cat}
+          defaultValue={findOptionByCode(opt.cat, ep?.categorycode)}
+          onChange={(v) => setSelectedCategoryCode(extractCode(v))} />
+        <InlineDropdownField key={selectedCategoryCode} label="Sub-Category" name="subcategorycode" options={subCatOptions}
+          onAddNew={handleAddSubCategory}
+          defaultValue={findOptionByCode(subCatOptions, ep?.subcategorycode)} />
+        <InlineDropdownField label="Size"         name="size"            options={opt.size} onAddNew={add.size}
+          defaultValue={findOptionByCode(opt.size, ep?.size)} />
+        <InlineDropdownField label="Color"        name="color"           options={opt.color} onAddNew={add.color}
+          defaultValue={findOptionByCode(opt.color, ep?.color)} />
       </div>
 
       {/* right column */}
       <div className="flex flex-col gap-1.5">
         <InlineField label="Model" />
         <InlineField label="Dimension" name="sell_dimension" defaultValue={ep?.sell_dimension} />
-        <InlineDropdownField label="Units" name="sell_uom" options={['Piece (PC)', 'Box (BOX)']}
-          defaultValue={findOptionByCode(['Piece (PC)', 'Box (BOX)'], ep?.sell_uom)} />
+        <InlineDropdownField label="Units" name="sell_uom" options={opt.unit} onAddNew={add.unit}
+          defaultValue={findOptionByCode(opt.unit, ep?.sell_uom)} />
         <div className="grid grid-cols-2 gap-2 [grid-template-columns:1fr_1fr]">
           <NumericField label="Packing" name="sell_pack" defaultValue={ep?.sell_pack} />
           <NumericField label="Conversion" name="sell_packconv" defaultValue={ep?.sell_packconv?.toString()} />
         </div>
-        <InlineDropdownField label="Form" name="form"      options={['Solid (SLD)', 'Liquid (LIQ)']}
-          defaultValue={findOptionByCode(['Solid (SLD)', 'Liquid (LIQ)'], ep?.form)} />
-        <InlineDropdownField label="Type" name="item_type" options={['Retail (RTL)', 'Wholesale (WHS)']}
-          defaultValue={findOptionByCode(['Retail (RTL)', 'Wholesale (WHS)'], ep?.item_type)} />
+        <InlineDropdownField label="Form" name="form"      options={opt.form} onAddNew={add.form}
+          defaultValue={findOptionByCode(opt.form, ep?.form)} />
+        <InlineDropdownField label="Type" name="item_type" options={opt.type} onAddNew={add.type}
+          defaultValue={findOptionByCode(opt.type, ep?.item_type)} />
       </div>
     </fieldset>
   )
@@ -320,7 +433,8 @@ function Row3({ editingProduct }: { editingProduct?: Product | null }) {
   )
 }
 
-function Row1({ itemCode }: { itemCode: ItemCodeState }) {
+function Row1({ itemCode, editingProduct }: { itemCode: ItemCodeState; editingProduct?: Product | null }) {
+  const ep = editingProduct
   // Default barcode format comes from Settings > General > Barcode & QR Setup
   // (persisted to localStorage — no backend/database yet). This dialog only ever
   // mounts client-side after a user click, never during SSR, so reading
@@ -351,10 +465,10 @@ function Row1({ itemCode }: { itemCode: ItemCodeState }) {
       {/* left — identification fields (7/12) */}
       <div className="xl:col-span-7 p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
         <ItemCodeField labelWidth="w-44" itemCode={itemCode} maxLength={itemCodeMaxLength} />
-        <InlineField label="Alternate Code" labelWidth="w-44" name="itemcode2" />
-        <InlineField label="Full Description (Long)" labelWidth="w-44" span2 name="desclong" />
-        <InlineField label="POS Description" labelWidth="w-44" name="descshort" />
-        <InlineField label="Query Text" labelWidth="w-44" name="querytext" />
+        <InlineField label="Alternate Code" labelWidth="w-44" name="itemcode2" defaultValue={ep?.itemcode2} />
+        <InlineField label="Full Description (Long)" labelWidth="w-44" span2 name="desclong" defaultValue={ep?.desclong} />
+        <InlineField label="POS Description" labelWidth="w-44" name="descshort" defaultValue={ep?.descshort} />
+        <InlineField label="Query Text" labelWidth="w-44" name="querytext" defaultValue={ep?.querytext} />
       </div>
 
       {/* right — image upload / barcode / QR preview (5/12), side by side */}
@@ -389,11 +503,15 @@ function Row1({ itemCode }: { itemCode: ItemCodeState }) {
   )
 }
 
-function ItemDefinitionsTab({ editingProduct }: { editingProduct?: Product | null }) {
+function ItemDefinitionsTab({ editingProduct, dropdownOptions, addHandlers, subCategories, onSubCategoryCreated }: {
+  editingProduct?: Product | null; dropdownOptions: Row2DropdownOptions; addHandlers: Row2AddHandlers
+  subCategories: SubCategory[]; onSubCategoryCreated: (s: SubCategory) => void
+}) {
   return (
     <div className="flex flex-col gap-2 h-full min-h-0">
       {/* row 2 */}
-      <Row2 editingProduct={editingProduct} />
+      <Row2 editingProduct={editingProduct} dropdownOptions={dropdownOptions} addHandlers={addHandlers}
+        subCategories={subCategories} onSubCategoryCreated={onSubCategoryCreated} />
 
       {/* row 3 */}
       <Row3 editingProduct={editingProduct} />
@@ -796,7 +914,7 @@ function ItemInformationTab({ editingProduct }: { editingProduct?: Product | nul
   )
 }
 
-export default function AddProductDialogV2({ open, onClose, onCreated, editingProduct, onUpdated }: AddProductDialogV2Props) {
+export default function ProductDialog({ open, onClose, onCreated, editingProduct, onUpdated }: ProductDialogProps) {
   const [activeTab, setActiveTab] = useState<Tab>('Item Definitions')
   const [isSaving,  setIsSaving]  = useState(false)
   // Shared across tabs since Row1 (with the Item Code/Barcode/QR preview) is
@@ -816,6 +934,81 @@ export default function AddProductDialogV2({ open, onClose, onCreated, editingPr
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open, onClose])
+
+  // Row 2 dropdown options — fetched once per open, active entries only.
+  const [deptOptions, setDeptOptions]   = useState<string[]>([])
+  const [classOptions, setClassOptions] = useState<string[]>([])
+  const [catOptions, setCatOptions]     = useState<string[]>([])
+  // Sub-categories stay unflattened (not toOptions'd) — Row2 needs category_code on
+  // each one to narrow the Sub-Category dropdown to the currently selected Category.
+  const [subCategories, setSubCategories] = useState<SubCategory[]>([])
+  const [sizeOptions, setSizeOptions]   = useState<string[]>([])
+  const [colorOptions, setColorOptions] = useState<string[]>([])
+  const [unitOptions, setUnitOptions]   = useState<string[]>([])
+  const [formOptions, setFormOptions]   = useState<string[]>([])
+  const [typeOptions, setTypeOptions]   = useState<string[]>([])
+
+  useEffect(() => {
+    if (!open) return
+    const token = localStorage.getItem('xantara_pos_access') ?? undefined
+    getDepartments(token).then((d) => setDeptOptions(toOptions(d))).catch(() => {})
+    getCategories(token).then((d) => setCatOptions(toOptions(d))).catch(() => {})
+    getSubCategories(token).then(setSubCategories).catch(() => {})
+    getClasses(token).then((d) => setClassOptions(toOptions(d))).catch(() => {})
+    getSizes(token).then((d) => setSizeOptions(toOptions(d))).catch(() => {})
+    getColors(token).then((d) => setColorOptions(toOptions(d))).catch(() => {})
+    getUnits(token).then((d) => setUnitOptions(toOptions(d))).catch(() => {})
+    getForms(token).then((d) => setFormOptions(toOptions(d))).catch(() => {})
+    getItemTypes(token).then((d) => setTypeOptions(toOptions(d))).catch(() => {})
+  }, [open])
+
+  // "+ Add" persists via the real API, appends the new "Name (CODE)" label to the
+  // matching options list, and returns it so the dropdown can auto-select it.
+  const authToken = () => localStorage.getItem('xantara_pos_access') ?? undefined
+  const addOptions: Row2AddHandlers = {
+    class: async (n) => {
+      const created = await createClass({ name: n }, authToken())
+      const lbl = `${created.name} (${created.code})`
+      setClassOptions((prev) => [...prev, lbl])
+      return lbl
+    },
+    cat: async (n) => {
+      const created = await createCategory(n, authToken())
+      const lbl = `${created.name} (${created.code})`
+      setCatOptions((prev) => [...prev, lbl])
+      return lbl
+    },
+    size: async (n) => {
+      const created = await createSize({ name: n }, authToken())
+      const lbl = `${created.name} (${created.code})`
+      setSizeOptions((prev) => [...prev, lbl])
+      return lbl
+    },
+    color: async (n) => {
+      const created = await createColor({ name: n }, authToken())
+      const lbl = `${created.name} (${created.code})`
+      setColorOptions((prev) => [...prev, lbl])
+      return lbl
+    },
+    unit: async (n) => {
+      const created = await createUnit({ name: n }, authToken())
+      const lbl = `${created.name} (${created.code})`
+      setUnitOptions((prev) => [...prev, lbl])
+      return lbl
+    },
+    form: async (n) => {
+      const created = await createForm({ name: n }, authToken())
+      const lbl = `${created.name} (${created.code})`
+      setFormOptions((prev) => [...prev, lbl])
+      return lbl
+    },
+    type: async (n) => {
+      const created = await createItemType({ name: n }, authToken())
+      const lbl = `${created.name} (${created.code})`
+      setTypeOptions((prev) => [...prev, lbl])
+      return lbl
+    },
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -868,7 +1061,7 @@ export default function AddProductDialogV2({ open, onClose, onCreated, editingPr
         >
           <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-100 flex-shrink-0">
             <h2 className="text-base font-bold text-neutral-800">
-              {editingProduct ? 'Edit Product' : 'Add Product'} — UI Preview
+              {editingProduct ? 'Edit Product' : 'Add Product'}
             </h2>
             <button type="button" onClick={onClose}
               className="w-8 h-8 rounded-lg hover:bg-neutral-100 flex items-center justify-center transition-colors">
@@ -911,9 +1104,14 @@ export default function AddProductDialogV2({ open, onClose, onCreated, editingPr
                 Row1 (Item Code/Barcode/QR) is identical on every tab, so it's rendered once
                 here instead of once per tab — avoids duplicate-named inputs in the form. */}
             <div className="flex-1 overflow-y-auto px-6 py-3 flex flex-col gap-2 min-h-0">
-              <Row1 itemCode={itemCode} />
+              <Row1 itemCode={itemCode} editingProduct={editingProduct} />
               <div className={activeTab === 'Item Definitions' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
-                <ItemDefinitionsTab editingProduct={editingProduct} />
+                <ItemDefinitionsTab editingProduct={editingProduct} dropdownOptions={{
+                  dept: deptOptions, class: classOptions, cat: catOptions,
+                  size: sizeOptions, color: colorOptions, unit: unitOptions, form: formOptions, type: typeOptions,
+                }} addHandlers={addOptions}
+                  subCategories={subCategories}
+                  onSubCategoryCreated={(s) => setSubCategories((prev) => [...prev, s])} />
               </div>
               <div className={activeTab === 'Item Information' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
                 <ItemInformationTab editingProduct={editingProduct} />
