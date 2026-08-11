@@ -24,9 +24,16 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail || !password) {
+      setError('Enter your email and password.')
+      return
+    }
+
     setLoading(true)
 
-    const result = await login(email, password)
+    const result = await login(normalizedEmail, password)
     if (result.success) {
       router.push('/dashboard')
     } else {
@@ -47,7 +54,7 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-4">
 
             <div>
               <label className="block text-xs font-semibold text-neutral-600
@@ -58,7 +65,11 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  setError('')
+                }}
+                onBlur={() => setEmail((value) => value.trim())}
                 placeholder="ck@xantara.com"
                 required
                 className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
@@ -77,7 +88,10 @@ export default function LoginPage() {
                   type={showPw ? 'text' : 'password'}
                   autoComplete="current-password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    setError('')
+                  }}
                   placeholder="••••••••"
                   required
                   className="w-full px-3 py-2.5 pr-10 text-sm border border-neutral-200
