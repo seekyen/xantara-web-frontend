@@ -32,7 +32,10 @@ export function POSProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-    if (!token) { setProductsLoading(false); return }
+    if (!token) {
+      const timer = window.setTimeout(() => setProductsLoading(false), 0)
+      return () => window.clearTimeout(timer)
+    }
 
     async function load() {
       try {
@@ -44,7 +47,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
         setProductsLoading(false)
       }
     }
-    load()
+    void load()
   }, [])
 
   return (

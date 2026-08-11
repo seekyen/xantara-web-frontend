@@ -2,7 +2,7 @@
 
 // TODO: Replace MOCK_DATA with API call → GET /api/staff
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Search, Plus, Pencil, Trash2, Eye, ShieldCheck, Clock,
 } from 'lucide-react'
@@ -44,6 +44,81 @@ const EMPTY_FORM = {
 }
 type FormState = typeof EMPTY_FORM
 
+function StaffFormFields({ state, onChange, isEdit = false, showPassword, onTogglePassword }: {
+  state: FormState
+  onChange: (form: FormState) => void
+  isEdit?: boolean
+  showPassword: boolean
+  onTogglePassword: () => void
+}) {
+  return (
+    <div className="px-6 py-5 space-y-4">
+      {([
+        { key: 'name',  label: 'Full Name *', type: 'text',  placeholder: 'Ana Reyes' },
+        { key: 'email', label: 'Email *',      type: 'email', placeholder: 'ana@xantara.com' },
+        { key: 'phone', label: 'Phone',        type: 'tel',   placeholder: '09XXXXXXXXX' },
+      ] as const).map(({ key, label, type, placeholder }) => (
+        <div key={key}>
+          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">{label}</label>
+          <input type={type} placeholder={placeholder} value={state[key]}
+            onChange={(event) => onChange({ ...state, [key]: event.target.value })}
+            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-brand-600"
+          />
+        </div>
+      ))}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Role *</label>
+          <select value={state.role}
+            onChange={(event) => onChange({ ...state, role: event.target.value as StaffRole })}
+            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-brand-600">
+            {ROLES.map((role) => <option key={role}>{role}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Branch *</label>
+          <select value={state.branch}
+            onChange={(event) => onChange({ ...state, branch: event.target.value })}
+            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-brand-600">
+            {BRANCHES.map((branch) => <option key={branch}>{branch}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Status</label>
+        <select value={state.status}
+          onChange={(event) => onChange({ ...state, status: event.target.value as StaffStatus })}
+          className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
+            focus:outline-none focus:ring-2 focus:ring-brand-600">
+          {STATUSES.map((status) => <option key={status}>{status}</option>)}
+        </select>
+      </div>
+      {!isEdit && (
+        <div>
+          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
+            Temporary Password *
+          </label>
+          <div className="relative">
+            <input type={showPassword ? 'text' : 'password'} placeholder="Min 6 characters"
+              value={state.password}
+              onChange={(event) => onChange({ ...state, password: event.target.value })}
+              className="w-full px-3 py-2.5 pr-10 text-sm border border-neutral-200 rounded-lg
+                focus:outline-none focus:ring-2 focus:ring-brand-600"
+            />
+            <button type="button" onClick={onTogglePassword}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-neutral-600">
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function StaffPage() {
   const { staff, setStaff, transactions } = usePOS()
   const { user }                          = useAuth()
@@ -80,8 +155,6 @@ export default function StaffPage() {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
-  useEffect(() => setPage(1), [search, roleFlt, branchFlt, statusFlt])
 
   // ── CRUD ──
   const handleAdd = () => {
@@ -127,74 +200,6 @@ export default function StaffPage() {
   const staffTxns = (name: string) =>
     transactions.filter((t) => t.cashier === name).sort((a, b) => b.txnNo.localeCompare(a.txnNo))
 
-  const FormFields = ({ state, onChange, isEdit = false }: {
-    state: FormState
-    onChange: (f: FormState) => void
-    isEdit?: boolean
-  }) => (
-    <div className="px-6 py-5 space-y-4">
-      {([
-        { key: 'name',  label: 'Full Name *',  type: 'text',  placeholder: 'Ana Reyes'      },
-        { key: 'email', label: 'Email *',       type: 'email', placeholder: 'ana@xantara.com'},
-        { key: 'phone', label: 'Phone',         type: 'tel',   placeholder: '09XXXXXXXXX'   },
-      ] as const).map(({ key, label, type, placeholder }) => (
-        <div key={key}>
-          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">{label}</label>
-          <input type={type} placeholder={placeholder} value={state[key]}
-            onChange={(e) => onChange({ ...state, [key]: e.target.value })}
-            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
-              focus:outline-none focus:ring-2 focus:ring-brand-600"
-          />
-        </div>
-      ))}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Role *</label>
-          <select value={state.role} onChange={(e) => onChange({ ...state, role: e.target.value as StaffRole })}
-            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
-              focus:outline-none focus:ring-2 focus:ring-brand-600">
-            {ROLES.map((r) => <option key={r}>{r}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Branch *</label>
-          <select value={state.branch} onChange={(e) => onChange({ ...state, branch: e.target.value })}
-            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
-              focus:outline-none focus:ring-2 focus:ring-brand-600">
-            {BRANCHES.map((b) => <option key={b}>{b}</option>)}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Status</label>
-        <select value={state.status} onChange={(e) => onChange({ ...state, status: e.target.value as StaffStatus })}
-          className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
-            focus:outline-none focus:ring-2 focus:ring-brand-600">
-          {STATUSES.map((s) => <option key={s}>{s}</option>)}
-        </select>
-      </div>
-      {!isEdit && (
-        <div>
-          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
-            Temporary Password *
-          </label>
-          <div className="relative">
-            <input type={showPw ? 'text' : 'password'} placeholder="Min 6 characters"
-              value={state.password}
-              onChange={(e) => onChange({ ...state, password: e.target.value })}
-              className="w-full px-3 py-2.5 pr-10 text-sm border border-neutral-200 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-brand-600"
-            />
-            <button type="button" onClick={() => setShowPw((p) => !p)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-neutral-600">
-              {showPw ? 'Hide' : 'Show'}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-
   return (
     <div className="pb-8">
 
@@ -234,21 +239,21 @@ export default function StaffPage() {
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
           <input type="text" placeholder="Search name or email…"
-            value={search} onChange={(e) => setSearch(e.target.value)}
+            value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200
               rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 placeholder:text-neutral-400"
           />
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {['All', ...ROLES].map((r) => (
-            <button key={r} onClick={() => setRoleFlt(r)}
+            <button key={r} onClick={() => { setRoleFlt(r); setPage(1) }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors
                 ${roleFlt === r ? 'bg-brand-600 text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
               {r}
             </button>
           ))}
         </div>
-        <select value={branchFlt} onChange={(e) => setBranchFlt(e.target.value)}
+        <select value={branchFlt} onChange={(e) => { setBranchFlt(e.target.value); setPage(1) }}
           className="px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg
             text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-600">
           <option value="All">All Branches</option>
@@ -256,7 +261,7 @@ export default function StaffPage() {
         </select>
         <div className="flex items-center gap-1.5">
           {['All','Active','Inactive','On Leave'].map((s) => (
-            <button key={s} onClick={() => setStatusFlt(s)}
+            <button key={s} onClick={() => { setStatusFlt(s); setPage(1) }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors
                 ${statusFlt === s ? 'bg-brand-600 text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
               {s}
@@ -450,7 +455,8 @@ export default function StaffPage() {
           </div>
         }
       >
-        <FormFields state={form} onChange={setForm} />
+        <StaffFormFields state={form} onChange={setForm} showPassword={showPw}
+          onTogglePassword={() => setShowPw((visible) => !visible)} />
       </DrawerModal>
 
       {/* ── Edit drawer ── */}
@@ -472,7 +478,8 @@ export default function StaffPage() {
           </div>
         }
       >
-        <FormFields state={form} onChange={setForm} isEdit />
+        <StaffFormFields state={form} onChange={setForm} isEdit showPassword={showPw}
+          onTogglePassword={() => setShowPw((visible) => !visible)} />
       </DrawerModal>
 
       {/* ── Delete confirm ── */}

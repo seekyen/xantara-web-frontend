@@ -90,6 +90,41 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   )
 }
 
+function ReceiptPreview({ receiptHeader, receiptFooter, showVAT, showCashier, vatRate }: {
+  receiptHeader: string
+  receiptFooter: string
+  showVAT: boolean
+  showCashier: boolean
+  vatRate: string
+}) {
+  return (
+    <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-200 font-mono text-xs">
+      <div className="text-center space-y-0.5 mb-3">
+        {receiptHeader.split('\n').map((line, index) => (
+          <div key={index} className={index === 0 ? 'font-bold text-sm' : 'text-neutral-500'}>{line}</div>
+        ))}
+      </div>
+      <div className="border-t border-dashed border-neutral-300 my-2" />
+      <div className="space-y-1 text-neutral-600">
+        <div className="flex justify-between"><span>Air Force 1</span><span>₱4,250</span></div>
+        <div className="flex justify-between"><span>Slim Fit Tee ×2</span><span>₱1,780</span></div>
+      </div>
+      <div className="border-t border-dashed border-neutral-300 my-2" />
+      {showVAT && (
+        <div className="flex justify-between text-neutral-500">
+          <span>VAT ({vatRate}%)</span><span>₱724</span>
+        </div>
+      )}
+      <div className="flex justify-between font-bold mt-1">
+        <span>TOTAL</span><span>₱6,754</span>
+      </div>
+      {showCashier && <div className="text-neutral-400 mt-2">Cashier: CK Caagbay</div>}
+      <div className="border-t border-dashed border-neutral-300 my-2" />
+      <div className="text-center text-neutral-400">{receiptFooter}</div>
+    </div>
+  )
+}
+
 function Field({
   label, value, onChange, type = 'text', placeholder = '',
 }: {
@@ -260,7 +295,13 @@ export default function SettingsPage() {
   }, [subPage, subFilter])
 
   useEffect(() => {
-    if (tab === 'categories') { loadCats(); loadSubs(); loadAllCats() }
+    if (tab !== 'categories') return
+    const timer = window.setTimeout(() => {
+      void loadCats()
+      void loadSubs()
+      void loadAllCats()
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [tab, loadCats, loadSubs, loadAllCats])
 
   // Category handlers
@@ -362,7 +403,9 @@ export default function SettingsPage() {
   }, [attrKind, attrPage])
 
   useEffect(() => {
-    if (tab === 'attributes') loadAttrs()
+    if (tab !== 'attributes') return
+    const timer = window.setTimeout(() => { void loadAttrs() }, 0)
+    return () => window.clearTimeout(timer)
   }, [tab, loadAttrs])
 
   const switchAttrKind = (k: AttrKind) => { setAttrKind(k); setAttrPage(1); setAttrSearch('') }
@@ -426,34 +469,6 @@ export default function SettingsPage() {
         s.code.toLowerCase().includes(subSearch.toLowerCase()) ||
         s.category_detail.name.toLowerCase().includes(subSearch.toLowerCase())
       : true,
-  )
-
-  // ── Receipt preview ───────────────────────────────────────────────────────────
-  const ReceiptPreview = () => (
-    <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-200 font-mono text-xs">
-      <div className="text-center space-y-0.5 mb-3">
-        {receiptHeader.split('\n').map((line, i) => (
-          <div key={i} className={i === 0 ? 'font-bold text-sm' : 'text-neutral-500'}>{line}</div>
-        ))}
-      </div>
-      <div className="border-t border-dashed border-neutral-300 my-2" />
-      <div className="space-y-1 text-neutral-600">
-        <div className="flex justify-between"><span>Air Force 1</span><span>₱4,250</span></div>
-        <div className="flex justify-between"><span>Slim Fit Tee ×2</span><span>₱1,780</span></div>
-      </div>
-      <div className="border-t border-dashed border-neutral-300 my-2" />
-      {showVAT && (
-        <div className="flex justify-between text-neutral-500">
-          <span>VAT ({vatRate}%)</span><span>₱724</span>
-        </div>
-      )}
-      <div className="flex justify-between font-bold mt-1">
-        <span>TOTAL</span><span>₱6,754</span>
-      </div>
-      {showCashier && <div className="text-neutral-400 mt-2">Cashier: CK Caagbay</div>}
-      <div className="border-t border-dashed border-neutral-300 my-2" />
-      <div className="text-center text-neutral-400">{receiptFooter}</div>
-    </div>
   )
 
   return (
@@ -526,7 +541,7 @@ export default function SettingsPage() {
               <div className="space-y-5 max-w-xs flex-1 min-w-[240px] lg:border-l lg:border-neutral-100 lg:pl-8">
                 <div>
                   <h2 className="text-sm font-bold text-neutral-800">Barcode & QR Setup</h2>
-                  <p className="text-xs text-neutral-400 mt-0.5">Both are always generated from each product's Item Code.</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">Both are always generated from each product&apos;s Item Code.</p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Barcode Format</label>
@@ -655,7 +670,8 @@ export default function SettingsPage() {
               </div>
               <div>
                 <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-3">Receipt Preview</p>
-                <ReceiptPreview />
+                <ReceiptPreview receiptHeader={receiptHeader} receiptFooter={receiptFooter}
+                  showVAT={showVAT} showCashier={showCashier} vatRate={vatRate} />
               </div>
             </div>
           )}
@@ -873,7 +889,7 @@ export default function SettingsPage() {
                         <Tag className="w-5 h-5 text-neutral-400" />
                       </div>
                       <p className="text-sm font-medium text-neutral-600">No categories yet</p>
-                      <p className="text-xs text-neutral-400 mt-1">Click "Add Category" to create your first one</p>
+                      <p className="text-xs text-neutral-400 mt-1">Click &quot;Add Category&quot; to create your first one</p>
                     </div>
                   ) : (
                     <div className="rounded-xl border border-neutral-200 overflow-hidden">

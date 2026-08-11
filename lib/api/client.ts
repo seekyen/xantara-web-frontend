@@ -1,4 +1,8 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+// Production is served behind the same-origin Nginx `/api/` proxy. Falling back
+// to the current origin prevents a missed build-time env var from sending a
+// customer's browser to its own localhost. Local development can still set
+// NEXT_PUBLIC_API_URL=http://localhost:8000 explicitly.
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 export class ApiError extends Error {
   constructor(public status: number, public body: unknown) {

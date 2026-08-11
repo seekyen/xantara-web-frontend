@@ -16,8 +16,8 @@ export interface LoginUser {
   role: string
   status: string
   initials: string
-  branch: number
-  branch_detail: BranchDetail
+  branch: number | null
+  branch_detail: BranchDetail | null
 }
 
 export interface LoginResponse {

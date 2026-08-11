@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { sanitizeNumericText } from '@/lib/inputSanitize'
 
 interface NumericFieldProps {
   label: string
@@ -18,10 +19,7 @@ export default function NumericField({ label, labelWidth = 'w-28', name, default
     <div className="flex items-center gap-2 min-w-0">
       <label className={`${labelWidth} flex-shrink-0 text-sm text-neutral-600`}>{label}</label>
       <input type="text" inputMode="decimal" name={name} value={value} placeholder="0.00"
-        onChange={(e) => {
-          const v = e.target.value
-          if (/^\d*\.?\d*$/.test(v)) setValue(v)
-        }}
+        onChange={(e) => setValue(sanitizeNumericText(e.target.value))}
         className="flex-1 min-w-0 w-full px-3 py-2 text-sm text-right border border-neutral-200 rounded-md
           focus:outline-none focus:ring-2 focus:ring-brand-600" />
     </div>

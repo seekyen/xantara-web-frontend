@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
-  Home, Package, Receipt, Users, BarChart2, UserCog, Settings, LogOut,
+  Home, Package, Truck, Receipt, Users, BarChart2, UserCog, Settings, LogOut,
   GitBranch, ChevronDown,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
@@ -33,6 +33,7 @@ type NavItem = FlatItem | GroupItem
 const NAV_ITEMS: NavItem[] = [
   { type: 'flat', href: '/dashboard',                          icon: Home,      label: 'Dashboard'         },
   { type: 'flat', href: '/dashboard/inventory',                icon: Package,   label: 'Inventory'         },
+  { type: 'flat', href: '/dashboard/suppliers',                icon: Truck,     label: 'Supplier'          },
   { type: 'flat', href: '/dashboard/sales',                    icon: Receipt,   label: 'Sales'             },
   { type: 'flat', href: '/dashboard/customers',                icon: Users,     label: 'Customers'         },
   { type: 'flat', href: '/dashboard/reports',                  icon: BarChart2, label: 'Reports'           },
@@ -52,6 +53,19 @@ const NAV_ITEMS: NavItem[] = [
   { type: 'flat', href: '/dashboard/settings', icon: Settings, label: 'Settings' },
 ]
 
+function activeGroupForPath(pathname: string): string | null {
+  for (const item of NAV_ITEMS) {
+    if (item.type !== 'group') continue
+    const childActive = item.children.some((child) =>
+      child.exact
+        ? pathname === child.href
+        : pathname === child.href || pathname.startsWith(child.href + '/'),
+    )
+    if (childActive) return item.key
+  }
+  return null
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 export default function Sidebar() {
@@ -59,25 +73,16 @@ export default function Sidebar() {
   const router           = useRouter()
   const { user, logout } = useAuth()
 
-  const [openGroup, setOpenGroup] = useState<string | null>(null)
-
-  // Keep the group open when the active route is one of its children.
-  useEffect(() => {
-    for (const item of NAV_ITEMS) {
-      if (item.type === 'group') {
-        const childActive = item.children.some((c) =>
-          c.exact ? pathname === c.href : pathname === c.href || pathname.startsWith(c.href + '/'),
-        )
-        if (childActive) {
-          setOpenGroup(item.key)
-          return
-        }
-      }
-    }
-  }, [pathname])
+  const [groupState, setGroupState] = useState(() => ({
+    pathname,
+    key: activeGroupForPath(pathname),
+  }))
+  const openGroup = groupState.pathname === pathname
+    ? groupState.key
+    : activeGroupForPath(pathname)
 
   const toggleGroup = (key: string) =>
-    setOpenGroup((prev) => (prev === key ? null : key))
+    setGroupState({ pathname, key: openGroup === key ? null : key })
 
   const isFlat = (href: string) =>
     href === '/dashboard'

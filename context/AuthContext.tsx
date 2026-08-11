@@ -14,7 +14,7 @@ export interface AuthUser {
   role: string
   status: string
   initials: string
-  branch: number
+  branch: number | null
   branch_name: string
 }
 
@@ -42,7 +42,7 @@ function userFromApi(u: LoginUser): AuthUser {
     status:      u.status,
     initials:    u.initials,
     branch:      u.branch,
-    branch_name: u.branch_detail.name,
+    branch_name: u.branch_detail?.name ?? 'Unassigned',
   }
 }
 
