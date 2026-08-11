@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import {
-  Home, Package, Receipt, Users, BarChart2, UserCog, Settings, LogOut,
+  Home, Package, Truck, Receipt, Users, BarChart2, UserCog, Settings, LogOut,
   GitBranch, ChevronDown,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
@@ -33,6 +33,7 @@ type NavItem = FlatItem | GroupItem
 const NAV_ITEMS: NavItem[] = [
   { type: 'flat', href: '/dashboard',                          icon: Home,      label: 'Dashboard'         },
   { type: 'flat', href: '/dashboard/inventory',                icon: Package,   label: 'Inventory'         },
+  { type: 'flat', href: '/dashboard/suppliers',                icon: Truck,     label: 'Supplier'          },
   { type: 'flat', href: '/dashboard/sales',                    icon: Receipt,   label: 'Sales'             },
   { type: 'flat', href: '/dashboard/customers',                icon: Users,     label: 'Customers'         },
   { type: 'flat', href: '/dashboard/reports',                  icon: BarChart2, label: 'Reports'           },

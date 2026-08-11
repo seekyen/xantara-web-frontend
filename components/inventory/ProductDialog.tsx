@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X, Search, Printer, Plus, Pencil, Trash2, Package,
   ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, ChevronDown,
@@ -14,7 +15,7 @@ import BarcodePreview from '@/components/shared/BarcodePreview'
 import QRCodePreview from '@/components/shared/QRCodePreview'
 import { type BarcodeFormat, getStoredBarcodeFormat } from '@/lib/barcodeFormat'
 import { type QRStyleOptions, getStoredQRStyle } from '@/lib/qrStyle'
-import { createProduct, updateProduct, type ProductWritePayload } from '@/lib/api/products'
+import { createProduct, updateProduct, getProductsPage, type ProductWritePayload } from '@/lib/api/products'
 import { type Product } from '@/lib/mock/products'
 import { getDepartments } from '@/lib/api/settings/department'
 import { getCategories, createCategory } from '@/lib/api/settings/category'
@@ -25,6 +26,9 @@ import { getColors, createColor } from '@/lib/api/settings/color'
 import { getUnits, createUnit } from '@/lib/api/settings/unit'
 import { getForms, createForm } from '@/lib/api/settings/form'
 import { getItemTypes, createItemType } from '@/lib/api/settings/itemType'
+import { getSuppliersPage, type Supplier as SupplierRecord } from '@/lib/api/suppliers/supplier'
+import SupplierDialog from '@/components/suppliers/SupplierDialog'
+import { sanitizeTextInput, sanitizeNumericText } from '@/lib/inputSanitize'
 
 // Active-only "Name (CODE)" labels — matches the "(CODE)" convention InlineDropdownField
 // already parses (extractCode/findOptionByCode), so real API data drops in with no other changes.
@@ -73,8 +77,9 @@ interface ItemCodeState {
 
 // Item Code has two entry modes: auto-generated (system-assigned, read-only) or
 // self-input (typed manually). Clicking into the field always asks via a SweetAlert2
-// Yes/No confirm, so the user can change their mind. UI preview only — the
-// "generated" value is a placeholder.
+// Yes/No confirm, so the user can change their mind. Auto mode's generated value comes
+// from Department + Category (see autoItemCode below) — those are marked required on
+// their own dropdowns rather than gated here, so the field itself never blocks.
 function ItemCodeField({ labelWidth = 'w-44', itemCode, maxLength }: {
   labelWidth?: string; itemCode: ItemCodeState; maxLength?: number
 }) {
@@ -105,14 +110,23 @@ function ItemCodeField({ labelWidth = 'w-44', itemCode, maxLength }: {
   )
 }
 
-function InlineField({ label, labelWidth = 'w-28', span2, disabled, defaultValue, placeholder, rightAlign, name }: {
+function InlineField({ label, labelWidth = 'w-28', span2, disabled, defaultValue, value, placeholder, rightAlign, name, onChange }: {
   label: string; labelWidth?: string; span2?: boolean; disabled?: boolean; defaultValue?: string
   placeholder?: string; rightAlign?: boolean; name?: string
+  /** Controlled alternative to defaultValue — needed when another field's typing should
+   *  live-mirror into this one (e.g. Full Description → POS Description). */
+  value?: string
+  onChange?: (value: string) => void
 }) {
   return (
     <div className={`flex items-center gap-2 min-w-0 ${span2 ? 'col-span-2' : ''}`}>
       <label className={`${labelWidth} flex-shrink-0 text-sm text-neutral-600`}>{label}</label>
-      <input type="text" name={disabled ? undefined : name} disabled={disabled} defaultValue={defaultValue}
+      <input type="text" name={disabled ? undefined : name} disabled={disabled}
+        {...(value !== undefined ? { value } : { defaultValue })}
+        onChange={(e) => {
+          e.target.value = sanitizeTextInput(e.target.value)
+          onChange?.(e.target.value)
+        }}
         placeholder={placeholder ?? `Enter ${label.replace(/\s*\*$/, '').toLowerCase()}…`}
         className={`flex-1 min-w-0 w-full px-3 py-2 text-sm border border-neutral-200 rounded-md
           focus:outline-none focus:ring-2 focus:ring-brand-600
@@ -196,12 +210,14 @@ function AddEntityModal({ label, open, onClose, onSubmit }: {
 // "+ Add <Label>" action sits right under the search box, above the results, and
 // opens a small add-entity modal. Pass `onAddNew` to persist the new entry via the
 // real lookup API (and auto-select it); omit it to keep the add flow UI-only.
-function InlineDropdownField({ label, options, labelWidth = 'w-28', defaultValue, name, onAddNew, onChange }: {
+function InlineDropdownField({ label, options, labelWidth = 'w-28', defaultValue, name, onAddNew, onChange, required }: {
   label: string; options: string[]; labelWidth?: string; defaultValue?: string; name?: string
   /** Persists a new entry via the real lookup API and returns its "Name (CODE)" label. */
   onAddNew?: (name: string) => Promise<string>
   /** Called with the selected "Name (CODE)" label whenever it changes — used to drive dependent dropdowns. */
   onChange?: (value: string) => void
+  /** Marks the label with a "*" — e.g. Department/Category, since Item Code auto-generation needs both. */
+  required?: boolean
 }) {
   // `selectedValue` is only set once the user actively picks/adds something. Until then,
   // `value` is derived from defaultValue + options on every render — so it naturally
@@ -236,7 +252,9 @@ function InlineDropdownField({ label, options, labelWidth = 'w-28', defaultValue
 
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <label className={`${labelWidth} flex-shrink-0 text-sm text-neutral-600`}>{label}</label>
+      <label className={`${labelWidth} flex-shrink-0 text-sm text-neutral-600`}>
+        {label}{required && ' *'}
+      </label>
       <div ref={wrapperRef} className="relative flex-1 min-w-0">
         {name && <input type="hidden" name={name} value={value ? extractCode(value) : ''} />}
         <button type="button"
@@ -310,14 +328,20 @@ interface Row2AddHandlers {
   type:  (name: string) => Promise<string>
 }
 
-function Row2({ editingProduct, dropdownOptions: opt, addHandlers: add, subCategories, onSubCategoryCreated }: {
+function Row2({
+  editingProduct, dropdownOptions: opt, addHandlers: add, subCategories, onSubCategoryCreated,
+  onDeptCodeChange, selectedCategoryCode, onCategoryCodeChange,
+}: {
   editingProduct?: Product | null; dropdownOptions: Row2DropdownOptions; addHandlers: Row2AddHandlers
   subCategories: SubCategory[]; onSubCategoryCreated: (s: SubCategory) => void
+  onDeptCodeChange: (code: string) => void
+  selectedCategoryCode: string; onCategoryCodeChange: (code: string) => void
 }) {
   const ep = editingProduct
   // Category → Sub-Category are interconnected: picking a Category narrows Sub-Category
   // to only its children (real category_code relationship, not just a flat list).
-  const [selectedCategoryCode, setSelectedCategoryCode] = useState(ep?.categorycode ?? '')
+  // Department/Category selections are lifted to the top-level dialog since they also
+  // feed the auto-generated Item Code (Row1).
   const subCatOptions = subCategories
     .filter((s) => s.is_active && (!selectedCategoryCode || s.category_code === selectedCategoryCode))
     .map((s) => `${s.name} (${s.code})`)
@@ -337,13 +361,14 @@ function Row2({ editingProduct, dropdownOptions: opt, addHandlers: add, subCateg
       <legend className="px-2 text-xs font-semibold text-neutral-500">Item Info</legend>
       {/* left column */}
       <div className="flex flex-col gap-1.5">
-        <InlineDropdownField label="Department"   name="deptcode"        options={opt.dept}
-          defaultValue={findOptionByCode(opt.dept, ep?.deptcode)} />
+        <InlineDropdownField label="Department"   name="deptcode"        options={opt.dept} required
+          defaultValue={findOptionByCode(opt.dept, ep?.deptcode)}
+          onChange={(v) => onDeptCodeChange(extractCode(v))} />
         <InlineDropdownField label="Class"        name="classcode"       options={opt.class} onAddNew={add.class}
           defaultValue={findOptionByCode(opt.class, ep?.classcode)} />
-        <InlineDropdownField label="Category"     name="categorycode"    options={opt.cat} onAddNew={add.cat}
+        <InlineDropdownField label="Category"     name="categorycode"    options={opt.cat} onAddNew={add.cat} required
           defaultValue={findOptionByCode(opt.cat, ep?.categorycode)}
-          onChange={(v) => setSelectedCategoryCode(extractCode(v))} />
+          onChange={(v) => onCategoryCodeChange(extractCode(v))} />
         <InlineDropdownField key={selectedCategoryCode} label="Sub-Category" name="subcategorycode" options={subCatOptions}
           onAddNew={handleAddSubCategory}
           defaultValue={findOptionByCode(subCatOptions, ep?.subcategorycode)} />
@@ -433,7 +458,9 @@ function Row3({ editingProduct }: { editingProduct?: Product | null }) {
   )
 }
 
-function Row1({ itemCode, editingProduct }: { itemCode: ItemCodeState; editingProduct?: Product | null }) {
+function Row1({ itemCode, editingProduct }: {
+  itemCode: ItemCodeState; editingProduct?: Product | null
+}) {
   const ep = editingProduct
   // Default barcode format comes from Settings > General > Barcode & QR Setup
   // (persisted to localStorage — no backend/database yet). This dialog only ever
@@ -447,6 +474,22 @@ function Row1({ itemCode, editingProduct }: { itemCode: ItemCodeState; editingPr
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [imageName, setImageName] = useState('')
   const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+
+  // POS Description mirrors Full Description (Long) as the user types, until they type
+  // into POS Description directly — from then on it keeps whatever they typed instead of
+  // following Full Description anymore. Editing an existing product with its own saved
+  // POS Description starts already "touched" so it's never silently overwritten.
+  const [descLong, setDescLong]   = useState(ep?.desclong ?? '')
+  const [descShort, setDescShort] = useState(ep?.descshort ?? '')
+  const [descShortTouched, setDescShortTouched] = useState(Boolean(ep?.descshort))
+  const handleDescLongChange = (v: string) => {
+    setDescLong(v)
+    if (!descShortTouched) setDescShort(v)
+  }
+  const handleDescShortChange = (v: string) => {
+    setDescShortTouched(true)
+    setDescShort(v)
+  }
 
   // Revoke the previous object URL whenever it changes/unmounts to avoid leaking memory.
   useEffect(() => () => { if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl) }, [imagePreviewUrl])
@@ -466,8 +509,10 @@ function Row1({ itemCode, editingProduct }: { itemCode: ItemCodeState; editingPr
       <div className="xl:col-span-7 p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
         <ItemCodeField labelWidth="w-44" itemCode={itemCode} maxLength={itemCodeMaxLength} />
         <InlineField label="Alternate Code" labelWidth="w-44" name="itemcode2" defaultValue={ep?.itemcode2} />
-        <InlineField label="Full Description (Long)" labelWidth="w-44" span2 name="desclong" defaultValue={ep?.desclong} />
-        <InlineField label="POS Description" labelWidth="w-44" name="descshort" defaultValue={ep?.descshort} />
+        <InlineField label="Full Description (Long)" labelWidth="w-44" span2 name="desclong"
+          value={descLong} onChange={handleDescLongChange} />
+        <InlineField label="POS Description" labelWidth="w-44" name="descshort"
+          value={descShort} onChange={handleDescShortChange} />
         <InlineField label="Query Text" labelWidth="w-44" name="querytext" defaultValue={ep?.querytext} />
       </div>
 
@@ -503,15 +548,22 @@ function Row1({ itemCode, editingProduct }: { itemCode: ItemCodeState; editingPr
   )
 }
 
-function ItemDefinitionsTab({ editingProduct, dropdownOptions, addHandlers, subCategories, onSubCategoryCreated }: {
+function ItemDefinitionsTab({
+  editingProduct, dropdownOptions, addHandlers, subCategories, onSubCategoryCreated,
+  onDeptCodeChange, selectedCategoryCode, onCategoryCodeChange,
+}: {
   editingProduct?: Product | null; dropdownOptions: Row2DropdownOptions; addHandlers: Row2AddHandlers
   subCategories: SubCategory[]; onSubCategoryCreated: (s: SubCategory) => void
+  onDeptCodeChange: (code: string) => void
+  selectedCategoryCode: string; onCategoryCodeChange: (code: string) => void
 }) {
   return (
     <div className="flex flex-col gap-2 h-full min-h-0">
       {/* row 2 */}
       <Row2 editingProduct={editingProduct} dropdownOptions={dropdownOptions} addHandlers={addHandlers}
-        subCategories={subCategories} onSubCategoryCreated={onSubCategoryCreated} />
+        subCategories={subCategories} onSubCategoryCreated={onSubCategoryCreated}
+        onDeptCodeChange={onDeptCodeChange}
+        selectedCategoryCode={selectedCategoryCode} onCategoryCodeChange={onCategoryCodeChange} />
 
       {/* row 3 */}
       <Row3 editingProduct={editingProduct} />
@@ -643,19 +695,6 @@ function ItemBundleBox() {
   )
 }
 
-function NumberField({ label, labelWidth = 'w-44', defaultValue = 0, name }: {
-  label: string; labelWidth?: string; defaultValue?: number; name?: string
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className={`${labelWidth} flex-shrink-0 text-sm text-neutral-600`}>{label}</label>
-      <input type="number" name={name} defaultValue={defaultValue}
-        className="flex-1 px-3 py-2 text-sm text-right border border-neutral-200 rounded-md
-          focus:outline-none focus:ring-2 focus:ring-brand-600" />
-    </div>
-  )
-}
-
 function PaginationControls() {
   const btnCls = "w-7 h-7 flex-shrink-0 flex items-center justify-center border border-neutral-200 rounded hover:bg-neutral-50 text-neutral-500"
   return (
@@ -671,13 +710,187 @@ function PaginationControls() {
   )
 }
 
+// Row-1-style disabled display field — plain and controlled (not InlineField's
+// defaultValue), since its value arrives after mount once a supplier is picked and
+// defaultValue only ever applies on first render.
+function DisabledDisplayField({ label, labelWidth = 'w-32', value }: { label: string; labelWidth?: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <label className={`${labelWidth} flex-shrink-0 text-sm text-neutral-600`}>{label}</label>
+      <input type="text" disabled readOnly value={value || '—'}
+        className="flex-1 min-w-0 w-full px-3 py-2 text-sm border border-neutral-200 rounded-md
+          bg-neutral-100 text-neutral-400" />
+    </div>
+  )
+}
+
 function SupplierInfoBox({ editingProduct }: { editingProduct?: Product | null }) {
+  const [supplierCode, setSupplierCode] = useState(editingProduct?.suppliercode ?? '')
+  const [companyName, setCompanyName]   = useState('')
+  const [orderTerms, setOrderTerms]     = useState('')
+  const [pickerOpen, setPickerOpen]     = useState(false)
+  const [addSupplierOpen, setAddSupplierOpen] = useState(false)
+
+  const handleSelect = (s: SupplierRecord) => {
+    setSupplierCode(s.supplier_code)
+    setCompanyName(s.company_name)
+    setOrderTerms(s.payment_terms)
+    setPickerOpen(false)
+  }
+
   return (
     <div className="border border-neutral-200 rounded-lg p-2.5 flex flex-col gap-2 flex-shrink-0">
-      <SearchField label="Supplier Code" labelWidth="w-32" name="suppliercode" defaultValue={editingProduct?.suppliercode} />
-      <InlineField label="Company Name" labelWidth="w-32" disabled />
-      <InlineField label="Order Terms" labelWidth="w-32" disabled />
+      <div className="flex items-center gap-2 min-w-0">
+        <label className="w-32 flex-shrink-0 text-sm text-neutral-600">Supplier Code</label>
+        <input type="text" name="suppliercode" value={supplierCode}
+          onChange={(e) => setSupplierCode(sanitizeTextInput(e.target.value))}
+          placeholder="Search supplier code…"
+          className="w-40 flex-shrink-0 px-3 py-2 text-sm border border-neutral-200 rounded-md
+            focus:outline-none focus:ring-2 focus:ring-brand-600" />
+        <button type="button" onClick={() => setPickerOpen(true)}
+          className="w-9 h-9 flex-shrink-0 flex items-center justify-center border border-neutral-200
+            rounded-md hover:bg-neutral-50 text-neutral-500">
+          <Search className="w-4 h-4" />
+        </button>
+        <input type="text" disabled readOnly value={companyName || '—'}
+          className="flex-1 min-w-0 px-3 py-2 text-sm border border-neutral-200 rounded-md bg-neutral-100 text-neutral-400" />
+      </div>
+      <DisabledDisplayField label="Company Name" value={companyName} />
+      <DisabledDisplayField label="Order Terms" value={orderTerms} />
+
+      {pickerOpen && (
+        <SupplierPickerModal onSelect={handleSelect} onClose={() => setPickerOpen(false)}
+          onAddNew={() => { setPickerOpen(false); setAddSupplierOpen(true) }} />
+      )}
+
+      {/* Reuses the real Suppliers > Add Supplier dialog so a new supplier created here
+          shows up in the main Suppliers list too, not just this product form. Portaled to
+          <body> since SupplierDialog renders its own <form> — nesting it inside this
+          ProductDialog's <form> is invalid HTML and triggers a hydration error. */}
+      {addSupplierOpen && createPortal(
+        <SupplierDialog
+          open={addSupplierOpen}
+          elevated
+          onClose={() => setAddSupplierOpen(false)}
+          onCreated={(s) => { handleSelect(s); setAddSupplierOpen(false) }}
+        />,
+        document.body,
+      )}
     </div>
+  )
+}
+
+// Modal for picking an active Supplier — used by SupplierInfoBox's search button.
+function SupplierPickerModal({ onSelect, onClose, onAddNew }: {
+  onSelect: (s: SupplierRecord) => void; onClose: () => void; onAddNew: () => void
+}) {
+  const PAGE_SIZE = 10
+  const [suppliers, setSuppliers] = useState<SupplierRecord[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [count, setCount]         = useState(0)
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch]           = useState('')
+  const [page, setPage]               = useState(1)
+
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput); setPage(1) }, 300)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  useEffect(() => {
+    const token = localStorage.getItem('xantara_pos_access') ?? undefined
+    getSuppliersPage({ is_active: true, search: search || undefined, page }, token)
+      .then((data) => { setSuppliers(data.results); setCount(data.count) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [search, page])
+
+  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE))
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 pointer-events-none">
+        <div onClick={(e) => e.stopPropagation()}
+          className="pointer-events-auto bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-100 flex-shrink-0">
+            <h3 className="text-sm font-bold text-neutral-800">Select Supplier</h3>
+            <button type="button" onClick={onClose}
+              className="w-7 h-7 rounded-lg hover:bg-neutral-100 flex items-center justify-center transition-colors">
+              <X className="w-4 h-4 text-neutral-500" />
+            </button>
+          </div>
+
+          <div className="px-5 py-3 border-b border-neutral-100 flex-shrink-0">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+              <input type="text" autoFocus value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search supplier code or name…"
+                className="w-full pl-9 pr-3 py-2 text-sm border border-neutral-200 rounded-md
+                  focus:outline-none focus:ring-2 focus:ring-brand-600" />
+            </div>
+          </div>
+
+          <button type="button" onClick={onAddNew}
+            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold text-brand-600
+              hover:bg-brand-50 transition-colors border-b border-neutral-100 flex-shrink-0">
+            <Plus className="w-3.5 h-3.5" />
+            Add Supplier
+          </button>
+
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-neutral-100 bg-neutral-50 sticky top-0">
+                  {['Supplier Code', 'Supplier Name', 'Order Terms'].map((h) => (
+                    <th key={h} className="px-4 py-2 text-xs font-semibold text-neutral-400 uppercase tracking-wide text-left">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {suppliers.map((s) => (
+                  <tr key={s.id} onClick={() => onSelect(s)}
+                    className="hover:bg-brand-50 cursor-pointer transition-colors">
+                    <td className="px-4 py-2 text-xs font-mono text-neutral-600">{s.supplier_code}</td>
+                    <td className="px-4 py-2 text-sm font-semibold text-neutral-800">{s.company_name}</td>
+                    <td className="px-4 py-2 text-sm text-neutral-600">{s.payment_terms}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {loading && (
+              <div className="flex items-center justify-center gap-2 py-10 text-neutral-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-xs">Loading…</span>
+              </div>
+            )}
+            {!loading && suppliers.length === 0 && (
+              <p className="text-center text-xs text-neutral-400 py-10">No active suppliers found.</p>
+            )}
+          </div>
+
+          {!loading && count > 0 && (
+            <div className="flex items-center justify-between px-4 py-2.5 border-t border-neutral-100 flex-shrink-0">
+              <span className="text-xs text-neutral-400">Page {page} of {totalPages} · {count} suppliers</span>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setPage((p) => Math.max(p - 1, 1))} disabled={page === 1}
+                  className="w-7 h-7 rounded-md border border-neutral-200 flex items-center justify-center
+                    text-neutral-400 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button type="button" onClick={() => setPage((p) => Math.min(p + 1, totalPages))} disabled={page === totalPages}
+                  className="w-7 h-7 rounded-md border border-neutral-200 flex items-center justify-center
+                    text-neutral-400 hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -713,9 +926,9 @@ function OrderingInformationBox({ editingProduct }: { editingProduct?: Product |
 
       {/* right column */}
       <div className="flex flex-col gap-1.5">
-        <NumberField label="Supplier Minimum Order" />
-        <NumberField label="Re-Order Point (ROP)" name="stock_rop" defaultValue={ep?.stock_rop} />
-        <NumberField label="Maximum Stock" name="stock_limit" defaultValue={ep?.stock_limit} />
+        <NumericField label="Supplier Minimum Order" labelWidth="w-44" />
+        <NumericField label="Re-Order Point (ROP)" labelWidth="w-44" name="stock_rop" defaultValue={ep?.stock_rop?.toString()} />
+        <NumericField label="Maximum Stock" labelWidth="w-44" name="stock_limit" defaultValue={ep?.stock_limit?.toString()} />
       </div>
     </fieldset>
   )
@@ -804,7 +1017,8 @@ function MarkupBox({ editingProduct }: { editingProduct?: Product | null }) {
 
         <div className="flex items-center gap-2">
           <label className="w-16 flex-shrink-0 text-sm text-neutral-600">Retail</label>
-          <input type="text" name="markup_rp" defaultValue={ep?.markup_rp?.toString() ?? '0.0000'}
+          <input type="text" inputMode="decimal" name="markup_rp" defaultValue={ep?.markup_rp?.toString() ?? '0.0000'}
+            onChange={(e) => { e.target.value = sanitizeNumericText(e.target.value) }}
             className="flex-1 min-w-0 px-3 py-2 text-sm text-right border border-neutral-200 rounded-md
               focus:outline-none focus:ring-2 focus:ring-brand-600" />
           <span className="flex-shrink-0 text-sm text-neutral-400">%</span>
@@ -817,7 +1031,8 @@ function MarkupBox({ editingProduct }: { editingProduct?: Product | null }) {
 
         <div className="flex items-center gap-2">
           <label className="w-16 flex-shrink-0 text-sm text-neutral-600">Wholesale</label>
-          <input type="text" name="markup_ws" defaultValue={ep?.markup_ws?.toString() ?? '0.0000'}
+          <input type="text" inputMode="decimal" name="markup_ws" defaultValue={ep?.markup_ws?.toString() ?? '0.0000'}
+            onChange={(e) => { e.target.value = sanitizeNumericText(e.target.value) }}
             className="flex-1 min-w-0 px-3 py-2 text-sm text-right border border-neutral-200 rounded-md
               focus:outline-none focus:ring-2 focus:ring-brand-600" />
           <span className="flex-shrink-0 text-sm text-neutral-400">%</span>
@@ -832,7 +1047,7 @@ function MarkupBox({ editingProduct }: { editingProduct?: Product | null }) {
 function MiscOptionsBox({ editingProduct }: { editingProduct?: Product | null }) {
   return (
     <div className="border border-neutral-200 rounded-lg p-2.5 grid grid-cols-1 sm:grid-cols-3 gap-2 flex-shrink-0">
-      <NumberField label="Min. Wholesale Qty" labelWidth="w-32" name="minwhlsaleqty" defaultValue={editingProduct?.minwhlsaleqty} />
+      <NumericField label="Min. Wholesale Qty" labelWidth="w-32" name="minwhlsaleqty" defaultValue={editingProduct?.minwhlsaleqty?.toString()} />
       <InlineDropdownField label="Multi-Packing" labelWidth="w-28" options={['No', 'Yes']} defaultValue="No" />
       <InlineDropdownField label="Allowed Disc." labelWidth="w-28" options={['0 - ALL', '1 - Staff Only']} defaultValue="0 - ALL" />
     </div>
@@ -852,8 +1067,8 @@ function PriceTypeBox({ editingProduct }: { editingProduct?: Product | null }) {
       </div>
       <div className="flex items-center gap-3 sm:ml-auto">
         <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide flex-shrink-0">Sales Factor</span>
-        <NumberField label="Slow Movement" labelWidth="w-28" name="slowfactor" defaultValue={ep?.slowfactor} />
-        <NumberField label="Fast" labelWidth="w-12" name="fastfactor" defaultValue={ep?.fastfactor} />
+        <NumericField label="Slow Movement" labelWidth="w-28" name="slowfactor" defaultValue={ep?.slowfactor?.toString()} />
+        <NumericField label="Fast" labelWidth="w-12" name="fastfactor" defaultValue={ep?.fastfactor?.toString()} />
       </div>
     </div>
   )
@@ -921,9 +1136,44 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
   // repeated at the top of every tab.
   const [itemCodeMode, setItemCodeMode] = useState<'auto' | 'manual'>('manual')
   const [itemCodeValue, setItemCodeValue] = useState(editingProduct?.itemcode ?? '')
+  // Department/Category are interconnected with Sub-Category (Row2) and also feed the
+  // auto-generated Item Code (Row1) — lifted here so both can share the same selection.
+  const [selectedDeptCode, setSelectedDeptCode] = useState(editingProduct?.deptcode ?? '')
+  const [selectedCategoryCode, setSelectedCategoryCode] = useState(editingProduct?.categorycode ?? '')
+  // "20" + deptcode + categorycode + a running 5-digit number. There's no backend counter
+  // endpoint, so the running number is derived by checking the existing product list for
+  // this Department+Category combo and taking the highest used number + 1 — avoids handing
+  // out a code that already exists.
+  const [nextItemNumber, setNextItemNumber] = useState(1)
+  useEffect(() => {
+    if (!open || !selectedDeptCode || !selectedCategoryCode) return
+    const prefix = `20${selectedDeptCode.padStart(4, '0')}${selectedCategoryCode.padStart(4, '0')}`
+    const token = localStorage.getItem('xantara_pos_access') ?? undefined
+    let cancelled = false
+    ;(async () => {
+      let page = 1, hasNext = true, maxNumber = 0
+      while (hasNext) {
+        const data = await getProductsPage(
+          { deptcode: selectedDeptCode, categorycode: selectedCategoryCode, page }, token,
+        )
+        data.results.forEach((p) => {
+          if (!p.itemcode?.startsWith(prefix)) return
+          const n = parseInt(p.itemcode.slice(prefix.length), 10)
+          if (!Number.isNaN(n) && n > maxNumber) maxNumber = n
+        })
+        hasNext = data.next !== null
+        page++
+      }
+      if (!cancelled) setNextItemNumber(maxNumber + 1)
+    })().catch(() => {})
+    return () => { cancelled = true }
+  }, [open, selectedDeptCode, selectedCategoryCode])
+  const autoItemCode = selectedDeptCode && selectedCategoryCode
+    ? `20${selectedDeptCode.padStart(4, '0')}${selectedCategoryCode.padStart(4, '0')}${String(nextItemNumber).padStart(5, '0')}`
+    : ''
   const itemCode: ItemCodeState = {
     mode:     itemCodeMode,
-    resolved: itemCodeMode === 'auto' ? 'ITM-0001' : itemCodeValue,
+    resolved: itemCodeMode === 'auto' ? autoItemCode : itemCodeValue,
     setMode:  setItemCodeMode,
     setValue: setItemCodeValue,
   }
@@ -1111,7 +1361,9 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
                   size: sizeOptions, color: colorOptions, unit: unitOptions, form: formOptions, type: typeOptions,
                 }} addHandlers={addOptions}
                   subCategories={subCategories}
-                  onSubCategoryCreated={(s) => setSubCategories((prev) => [...prev, s])} />
+                  onSubCategoryCreated={(s) => setSubCategories((prev) => [...prev, s])}
+                  onDeptCodeChange={setSelectedDeptCode}
+                  selectedCategoryCode={selectedCategoryCode} onCategoryCodeChange={setSelectedCategoryCode} />
               </div>
               <div className={activeTab === 'Item Information' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
                 <ItemInformationTab editingProduct={editingProduct} />
