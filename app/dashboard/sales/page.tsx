@@ -2,7 +2,7 @@
 
 // TODO: Replace MOCK_DATA with API call → GET /api/transactions
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Search, Download, Eye, RefreshCw,
   CreditCard, Banknote, Smartphone, Receipt,
@@ -60,8 +60,6 @@ export default function SalesPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  useEffect(() => setPage(1), [search, statusFlt, payFlt, dateFlt])
-
   // ── Stats ──
   const completed    = transactions.filter((t) => t.status === 'Completed')
   const todayComp    = completed.filter((t) => t.date === '2026-05-24')
@@ -117,7 +115,7 @@ export default function SalesPage() {
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
           <input type="text" placeholder="Search TXN# or cashier…"
-            value={search} onChange={(e) => setSearch(e.target.value)}
+            value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200
               rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 placeholder:text-neutral-400"
           />
@@ -126,7 +124,7 @@ export default function SalesPage() {
         {/* Status pills */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {['All','Completed','Refunded','Voided','Pending'].map((s) => (
-            <button key={s} onClick={() => setStatusFlt(s)}
+            <button key={s} onClick={() => { setStatusFlt(s); setPage(1) }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors
                 ${statusFlt === s ? 'bg-brand-600 text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
               {s}
@@ -135,7 +133,7 @@ export default function SalesPage() {
         </div>
 
         {/* Pay method */}
-        <select value={payFlt} onChange={(e) => setPayFlt(e.target.value)}
+        <select value={payFlt} onChange={(e) => { setPayFlt(e.target.value); setPage(1) }}
           className="px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg
             text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-600">
           <option value="All">All Methods</option>
@@ -145,7 +143,7 @@ export default function SalesPage() {
         {/* Date range */}
         <div className="ml-auto flex items-center gap-1.5">
           {['Today','Yesterday','Last 7 days','This Month'].map((d) => (
-            <button key={d} onClick={() => setDateFlt(d)}
+            <button key={d} onClick={() => { setDateFlt(d); setPage(1) }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors
                 ${dateFlt === d ? 'bg-brand-600 text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
               {d}

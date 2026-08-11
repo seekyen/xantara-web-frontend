@@ -2,7 +2,7 @@
 
 // TODO: Replace MOCK_DATA with API call → GET /api/customers
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Search, Plus, Star, Mail, Phone, Pencil, Trash2 } from 'lucide-react'
 import { type Customer } from '@/lib/mock/customers'
 import { usePOS }      from '@/context/POSContext'
@@ -34,6 +34,44 @@ function Initials({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'l
 
 const EMPTY_FORM = { name: '', email: '', phone: '', status: 'Active' as Customer['status'] }
 type FormState   = typeof EMPTY_FORM
+
+function CustomerFormFields({ state, onChange }: {
+  state: FormState
+  onChange: (form: FormState) => void
+}) {
+  return (
+    <div className="px-6 py-5 space-y-4">
+      {([
+        { key: 'name',  label: 'Full Name *', type: 'text',  placeholder: 'Maria Santos' },
+        { key: 'email', label: 'Email *',      type: 'email', placeholder: 'maria@email.com' },
+        { key: 'phone', label: 'Phone *',      type: 'tel',   placeholder: '09XXXXXXXXX' },
+      ] as const).map(({ key, label, type, placeholder }) => (
+        <div key={key}>
+          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
+            {label}
+          </label>
+          <input type={type} placeholder={placeholder} value={state[key]}
+            onChange={(event) => onChange({ ...state, [key]: event.target.value })}
+            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-brand-600"
+          />
+        </div>
+      ))}
+      <div>
+        <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
+          Status
+        </label>
+        <select value={state.status}
+          onChange={(event) => onChange({ ...state, status: event.target.value as Customer['status'] })}
+          className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
+            focus:outline-none focus:ring-2 focus:ring-brand-600">
+          <option>Active</option>
+          <option>Inactive</option>
+        </select>
+      </div>
+    </div>
+  )
+}
 
 export default function CustomersPage() {
   const { customers, setCustomers, transactions } = usePOS()
@@ -77,8 +115,6 @@ export default function CustomersPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  useEffect(() => setPage(1), [search, statusFlt, sortBy])
-
   // ── CRUD ──
   const handleAdd = () => {
     setCustomers((prev) => [{
@@ -117,42 +153,6 @@ export default function CustomersPage() {
   const custTxns = (id: string) =>
     transactions.filter((t) => t.customerId === id).sort((a, b) => b.txnNo.localeCompare(a.txnNo))
 
-  // ── Form fields helper ──
-  const FormFields = ({ state, onChange }: {
-    state: FormState
-    onChange: (f: FormState) => void
-  }) => (
-    <div className="px-6 py-5 space-y-4">
-      {([
-        { key: 'name',  label: 'Full Name *',  type: 'text',  placeholder: 'Maria Santos'          },
-        { key: 'email', label: 'Email *',       type: 'email', placeholder: 'maria@email.com'       },
-        { key: 'phone', label: 'Phone *',       type: 'tel',   placeholder: '09XXXXXXXXX'           },
-      ] as const).map(({ key, label, type, placeholder }) => (
-        <div key={key}>
-          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
-            {label}
-          </label>
-          <input type={type} placeholder={placeholder} value={state[key]}
-            onChange={(e) => onChange({ ...state, [key]: e.target.value })}
-            className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
-              focus:outline-none focus:ring-2 focus:ring-brand-600"
-          />
-        </div>
-      ))}
-      <div>
-        <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
-          Status
-        </label>
-        <select value={state.status} onChange={(e) => onChange({ ...state, status: e.target.value as Customer['status'] })}
-          className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
-            focus:outline-none focus:ring-2 focus:ring-brand-600">
-          <option>Active</option>
-          <option>Inactive</option>
-        </select>
-      </div>
-    </div>
-  )
-
   return (
     <div className="pb-8">
 
@@ -190,14 +190,14 @@ export default function CustomersPage() {
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
           <input type="text" placeholder="Search name, email, or phone…"
-            value={search} onChange={(e) => setSearch(e.target.value)}
+            value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200
               rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 placeholder:text-neutral-400"
           />
         </div>
         <div className="flex items-center gap-2">
           {['All','Active','Inactive'].map((s) => (
-            <button key={s} onClick={() => setStatusFlt(s)}
+            <button key={s} onClick={() => { setStatusFlt(s); setPage(1) }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors
                 ${statusFlt === s ? 'bg-brand-600 text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
               {s}
@@ -206,7 +206,7 @@ export default function CustomersPage() {
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-neutral-400">Sort by</span>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
+          <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1) }}
             className="px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg
               text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-600">
             <option value="most-spent">Most Spent</option>
@@ -407,7 +407,7 @@ export default function CustomersPage() {
           </div>
         }
       >
-        <FormFields state={form} onChange={setForm} />
+        <CustomerFormFields state={form} onChange={setForm} />
       </DrawerModal>
 
       {/* ── Edit drawer ── */}
@@ -431,7 +431,7 @@ export default function CustomersPage() {
           </div>
         }
       >
-        <FormFields state={form} onChange={setForm} />
+        <CustomerFormFields state={form} onChange={setForm} />
       </DrawerModal>
 
       {/* ── Delete confirm ── */}

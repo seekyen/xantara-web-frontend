@@ -88,8 +88,11 @@ export default function DashboardPage() {
 
   const [greeting, setGreeting] = useState('')
   useEffect(() => {
-    const hour = new Date().getHours()
-    setGreeting(hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening')
+    const timer = window.setTimeout(() => {
+      const hour = new Date().getHours()
+      setGreeting(hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening')
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   return (

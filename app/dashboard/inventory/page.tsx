@@ -160,8 +160,6 @@ export default function InventoryPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  useEffect(() => setPage(1), [searchQuery, selectedCategory, stockFilter, sortBy])
-
   // ── Selection ──
   const toggleSelect    = (id: number) =>
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
@@ -219,7 +217,7 @@ export default function InventoryPage() {
             <span className="font-semibold text-warning-600">{lowStockCount} products</span>
             {' '}are running low and need restocking soon.
           </p>
-          <button onClick={() => setStockFilter('Low Stock')}
+          <button onClick={() => { setStockFilter('Low Stock'); setPage(1) }}
             className="text-xs font-semibold text-warning-600 hover:underline flex-shrink-0">
             View all
           </button>
@@ -297,13 +295,13 @@ export default function InventoryPage() {
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
           <input type="text" placeholder="Search products or item code…"
-            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
             className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200
               rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600
               focus:border-transparent placeholder:text-neutral-400"
           />
         </div>
-        <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}
+        <select value={selectedCategory} onChange={(e) => { setSelectedCategory(e.target.value); setPage(1) }}
           className="px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg
             text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-600">
           <option value="all">All Categories</option>
@@ -311,7 +309,7 @@ export default function InventoryPage() {
         </select>
         <div className="flex items-center bg-neutral-100 rounded-lg p-0.5">
           {(['All', 'In Stock', 'Low Stock', 'Out of Stock'] as const).map((s) => (
-            <button key={s} onClick={() => setStockFilter(s)}
+            <button key={s} onClick={() => { setStockFilter(s); setPage(1) }}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all whitespace-nowrap
                 ${stockFilter === s
                   ? 'bg-white text-neutral-800 shadow-sm'
@@ -323,7 +321,7 @@ export default function InventoryPage() {
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-neutral-400 whitespace-nowrap">Sort by</span>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
+          <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1) }}
             className="px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg
               text-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand-600">
             <option value="name-asc">Name A–Z</option>
@@ -474,7 +472,7 @@ export default function InventoryPage() {
             icon={<Package className="w-6 h-6 text-brand-600" />}
             title="No products found"
             description="Try adjusting your search or filters"
-            action={{ label: 'Clear filters', onClick: () => { setSearchQuery(''); setSelectedCategory('all'); setStockFilter('All') } }}
+            action={{ label: 'Clear filters', onClick: () => { setSearchQuery(''); setSelectedCategory('all'); setStockFilter('All'); setPage(1) } }}
           />
         )}
 
