@@ -21,7 +21,7 @@ import {
   getSubCategories, getSubCategoriesPaged,
   createSubCategory, updateSubCategory, deleteSubCategory,
 } from '@/lib/api/settings/subcategory'
-import type { PagedResponse } from '@/lib/api/client'
+import { ApiError, type PagedResponse } from '@/lib/api/client'
 import { type ItemClass, getClassesPaged, createClass, updateClass, deleteClass } from '@/lib/api/settings/class'
 import { type Size,      getSizesPaged,   createSize,  updateSize,  deleteSize  } from '@/lib/api/settings/size'
 import { type Color,     getColorsPaged,  createColor, updateColor, deleteColor } from '@/lib/api/settings/color'
@@ -33,6 +33,15 @@ import { type ItemType,  getItemTypesPaged, createItemType, updateItemType, dele
 
 const toast = (title: string, icon: 'success' | 'error' = 'success') =>
   Swal.fire({ icon, title, timer: 1600, showConfirmButton: false, timerProgressBar: true })
+
+function apiErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiError)) return fallback
+  const body = error.body as Record<string, unknown>
+  if (typeof body?.detail === 'string') return body.detail
+  const first = Object.values(body ?? {})[0]
+  if (Array.isArray(first) && typeof first[0] === 'string') return first[0]
+  return `${fallback} (HTTP ${error.status})`
+}
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
@@ -316,14 +325,14 @@ export default function SettingsPage() {
         await updateCategory(catEditId, { name: catForm.name, is_active: catForm.is_active }, token())
         toast('Category updated!')
       } else {
-        await createCategory(catForm.name, token())
+        await createCategory({ name: catForm.name.trim(), is_active: catForm.is_active }, token())
         toast('Category added!')
       }
       setCatDrawer(false)
       loadCats()
       loadAllCats()
-    } catch {
-      toast('Failed to save category', 'error')
+    } catch (error) {
+      toast(apiErrorMessage(error, 'Failed to save category'), 'error')
     } finally {
       setIsSavingCat(false)
     }

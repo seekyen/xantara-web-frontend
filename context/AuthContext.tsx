@@ -53,7 +53,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useIsomorphicLayoutEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) setUser(JSON.parse(stored) as AuthUser)
+      const access = localStorage.getItem(ACCESS_TOKEN_KEY)
+      if (stored && access) {
+        setUser(JSON.parse(stored) as AuthUser)
+      } else {
+        localStorage.removeItem(STORAGE_KEY)
+        localStorage.removeItem(ACCESS_TOKEN_KEY)
+        localStorage.removeItem(REFRESH_TOKEN_KEY)
+      }
     } catch {
       // ignore corrupted storage
     }

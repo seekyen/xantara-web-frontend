@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  Package, AlertTriangle, XCircle, TrendingUp,
+  Package, AlertTriangle, XCircle,
   Search, Pencil, Trash2, X, ChevronLeft, ChevronRight, Download, Plus, Loader2,
-  Barcode as BarcodeIcon, Printer,
+  Printer,
 } from 'lucide-react'
 import { getStatus, type Product } from '@/lib/mock/products'
 import BarcodePreview from '@/components/shared/BarcodePreview'
@@ -127,7 +127,6 @@ export default function InventoryPage() {
   // ── Derived stats ──
   const lowStockCount = products.filter((p) => getStatus(p) === 'Low Stock').length
   const outOfStock    = products.filter((p) => p.total_stock === 0).length
-  const totalValue    = products.reduce((s, p) => s + (Number(p.sell_price_rp) || 0) * (Number(p.total_stock) || 0), 0)
 
   // ── Filter + sort ──
   const filtered = products
@@ -247,7 +246,7 @@ export default function InventoryPage() {
       )}
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 px-6 py-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 px-6 py-4">
         <div className="bg-white rounded-xl border border-neutral-200 p-4">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Total Products</span>
@@ -277,16 +276,6 @@ export default function InventoryPage() {
           </div>
           <div className="text-2xl font-bold text-danger-600">{outOfStock}</div>
           <div className="text-xs text-neutral-400 mt-1">needs restocking now</div>
-        </div>
-        <div className="bg-white rounded-xl border border-neutral-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Total Value</span>
-            <div className="w-8 h-8 rounded-lg bg-success-50 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4 text-success-600" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-neutral-800">₱{totalValue.toLocaleString('en-PH')}</div>
-          <div className="text-xs text-success-600 mt-1">current inventory value</div>
         </div>
       </div>
 
@@ -345,10 +334,10 @@ export default function InventoryPage() {
                   className="w-4 h-4 rounded border-neutral-300 cursor-pointer"
                 />
               </th>
-              {['Product','SKU','Category','Price','Stock','Status','Value','Barcode',''].map((h, i) => (
+              {['Product','SKU','Category','Price','Stock','Status','Barcode',''].map((h, i) => (
                 <th key={h || i}
                   className={`px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide
-                    ${h === 'Price' || h === 'Value' ? 'text-right' : h === 'Stock' || h === 'Status' || h === 'Barcode' ? 'text-center' : 'text-left'}`}>
+                    ${h === 'Price' ? 'text-right' : h === 'Stock' || h === 'Status' || h === 'Barcode' ? 'text-center' : 'text-left'}`}>
                   {h}
                 </th>
               ))}
@@ -415,11 +404,6 @@ export default function InventoryPage() {
                         status === 'Low Stock'    ? 'warning' : 'success'
                       }>{status}</Badge>
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-sm text-neutral-600">
-                      ₱{((Number(product.sell_price_rp) || 0) * (Number(product.total_stock) || 0)).toLocaleString('en-PH')}
-                    </span>
                   </td>
                   <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-center">

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import {
   X, Search, Printer, Plus, Pencil, Trash2, Package,
   ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, ChevronDown,
-  Calculator, History, Wand2, ImageUp, Loader2,
+  Calculator, History, Wand2, ImageUp, Loader2, SlidersHorizontal,
   type LucideIcon,
 } from 'lucide-react'
 import Swal from 'sweetalert2'
@@ -16,7 +16,7 @@ import QRCodePreview from '@/components/shared/QRCodePreview'
 import { type BarcodeFormat, getStoredBarcodeFormat } from '@/lib/barcodeFormat'
 import { type QRStyleOptions, getStoredQRStyle } from '@/lib/qrStyle'
 import { createProduct, updateProduct, getProductsPage, type ProductWritePayload } from '@/lib/api/products'
-import { type Product } from '@/lib/mock/products'
+import { makeProduct, type Product } from '@/lib/mock/products'
 import { getDepartments } from '@/lib/api/settings/department'
 import { getCategories, createCategory } from '@/lib/api/settings/category'
 import { type SubCategory, getSubCategories, createSubCategory } from '@/lib/api/settings/subcategory'
@@ -1129,6 +1129,153 @@ function ItemInformationTab({ editingProduct }: { editingProduct?: Product | nul
   )
 }
 
+interface BasicProductFieldsProps {
+  productName: string
+  onProductNameChange: (value: string) => void
+  itemCode: string
+  onItemCodeChange: (value: string) => void
+  itemCodeIsAuto: boolean
+  onToggleItemCodeMode: () => void
+  categoryCode: string
+  onCategoryCodeChange: (value: string) => void
+  categoryOptions: string[]
+  unit: string
+  onUnitChange: (value: string) => void
+  retailPrice: string
+  onRetailPriceChange: (value: string) => void
+  taxCode: string
+  onTaxCodeChange: (value: string) => void
+  stockOnHand: string
+  onStockOnHandChange: (value: string) => void
+  reorderPoint: string
+  onReorderPointChange: (value: string) => void
+  trackInventory: boolean
+  onTrackInventoryChange: (value: boolean) => void
+  active: boolean
+  onActiveChange: (value: boolean) => void
+}
+
+function BasicProductFields({
+  productName, onProductNameChange,
+  itemCode, onItemCodeChange, itemCodeIsAuto, onToggleItemCodeMode,
+  categoryCode, onCategoryCodeChange, categoryOptions,
+  unit, onUnitChange,
+  retailPrice, onRetailPriceChange,
+  taxCode, onTaxCodeChange,
+  stockOnHand, onStockOnHandChange,
+  reorderPoint, onReorderPointChange,
+  trackInventory, onTrackInventoryChange,
+  active, onActiveChange,
+}: BasicProductFieldsProps) {
+  const [barcodeFormat] = useState<BarcodeFormat>(() => getStoredBarcodeFormat())
+  const inputClass = `mt-1.5 w-full rounded-md border border-neutral-300 bg-white px-3 py-2.5
+    text-sm text-black outline-none transition focus:border-brand-600 focus:ring-2 focus:ring-brand-100`
+  const labelClass = 'block text-sm font-medium text-neutral-700'
+  const currentCategoryIsMissing = categoryCode
+    && !categoryOptions.some((option) => extractCode(option) === categoryCode)
+
+  return (
+    <div className="mx-auto grid w-full max-w-2xl grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+      <label className={`${labelClass} sm:col-span-2`}>
+        Product name *
+        <input name="descshort" type="text" required maxLength={25} autoFocus
+          value={productName} onChange={(e) => onProductNameChange(e.target.value)}
+          className={inputClass} />
+      </label>
+
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor="basic-item-code" className={labelClass}>SKU / barcode *</label>
+          <button type="button" onClick={onToggleItemCodeMode}
+            disabled={!categoryCode && !itemCodeIsAuto}
+            className="flex items-center gap-1.5 text-xs font-semibold text-brand-600
+              hover:text-brand-800 disabled:cursor-not-allowed disabled:text-neutral-400">
+            {itemCodeIsAuto
+              ? <><Pencil className="h-3.5 w-3.5" /> Manual</>
+              : <><Wand2 className="h-3.5 w-3.5" /> Generate</>}
+          </button>
+        </div>
+        <input id="basic-item-code" type="text" required maxLength={15}
+          readOnly={itemCodeIsAuto} value={itemCode}
+          onChange={(e) => onItemCodeChange(e.target.value)}
+          className={`${inputClass} ${itemCodeIsAuto ? 'bg-neutral-50' : ''}`} />
+      </div>
+
+      <label className={labelClass}>
+        Category *
+        <select name="categorycode" required value={categoryCode}
+          onChange={(e) => onCategoryCodeChange(e.target.value)} className={inputClass}>
+          <option value="">Select category</option>
+          {currentCategoryIsMissing && <option value={categoryCode}>{categoryCode}</option>}
+          {categoryOptions.map((option) => (
+            <option key={option} value={extractCode(option)}>{option}</option>
+          ))}
+        </select>
+      </label>
+
+      {itemCode && (
+        <div className="sm:col-span-2 flex min-h-[72px] items-center justify-center overflow-x-auto
+          rounded-md border border-neutral-200 bg-white px-3 py-1">
+          <BarcodePreview value={itemCode} format={barcodeFormat} height={42} />
+        </div>
+      )}
+
+      <label className={labelClass}>
+        Unit
+        <input name="sell_uom" type="text" maxLength={6} value={unit}
+          onChange={(e) => onUnitChange(e.target.value)} className={inputClass} />
+      </label>
+
+      <label className={labelClass}>
+        Retail price *
+        <input name="sell_price_rp" type="number" required min="0" step="0.01"
+          value={retailPrice} onChange={(e) => onRetailPriceChange(e.target.value)}
+          className={`${inputClass} text-right`} />
+      </label>
+
+      <label className={labelClass}>
+        Stock on hand
+        <input name="stock_sa" type="number" min="0" step="0.001"
+          value={stockOnHand} onChange={(e) => onStockOnHandChange(e.target.value)}
+          className={`${inputClass} text-right`} />
+      </label>
+
+      <label className={labelClass}>
+        Reorder point
+        <input name="stock_rop" type="number" min="0" step="0.001"
+          value={reorderPoint} onChange={(e) => onReorderPointChange(e.target.value)}
+          className={`${inputClass} text-right`} />
+      </label>
+
+      <label className={labelClass}>
+        Tax
+        <select name="taxcode" value={taxCode}
+          onChange={(e) => onTaxCodeChange(e.target.value)} className={inputClass}>
+          <option value="T">Taxable</option>
+          <option value="N">Non-taxable</option>
+        </select>
+      </label>
+
+      <div className="flex items-end gap-6 pb-2">
+        <input type="hidden" name="trackinventory" value={String(trackInventory)} />
+        <input type="hidden" name="active" value={String(active)} />
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-neutral-700">
+          <input type="checkbox" checked={trackInventory}
+            onChange={(e) => onTrackInventoryChange(e.target.checked)}
+            className="h-4 w-4 accent-brand-600" />
+          Track stock
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-neutral-700">
+          <input type="checkbox" checked={active}
+            onChange={(e) => onActiveChange(e.target.checked)}
+            className="h-4 w-4 accent-brand-600" />
+          Active
+        </label>
+      </div>
+    </div>
+  )
+}
+
 export default function ProductDialog({ open, onClose, onCreated, editingProduct, onUpdated }: ProductDialogProps) {
   const [activeTab, setActiveTab] = useState<Tab>('Item Definitions')
   const [isSaving,  setIsSaving]  = useState(false)
@@ -1136,6 +1283,15 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
   // repeated at the top of every tab.
   const [itemCodeMode, setItemCodeMode] = useState<'auto' | 'manual'>('manual')
   const [itemCodeValue, setItemCodeValue] = useState(editingProduct?.itemcode ?? '')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [basicProductName, setBasicProductName] = useState(editingProduct?.descshort ?? '')
+  const [basicUnit, setBasicUnit] = useState(editingProduct?.sell_uom ?? 'PC')
+  const [basicRetailPrice, setBasicRetailPrice] = useState(editingProduct?.sell_price_rp?.toString() ?? '')
+  const [basicTaxCode, setBasicTaxCode] = useState(editingProduct?.taxcode ?? 'T')
+  const [basicStockOnHand, setBasicStockOnHand] = useState(editingProduct?.stock_sa?.toString() ?? '0')
+  const [basicReorderPoint, setBasicReorderPoint] = useState(editingProduct?.stock_rop?.toString() ?? '0')
+  const [basicTrackInventory, setBasicTrackInventory] = useState(editingProduct?.trackinventory ?? true)
+  const [basicActive, setBasicActive] = useState(editingProduct?.active ?? true)
   // Department/Category are interconnected with Sub-Category (Row2) and also feed the
   // auto-generated Item Code (Row1) — lifted here so both can share the same selection.
   const [selectedDeptCode, setSelectedDeptCode] = useState(editingProduct?.deptcode ?? '')
@@ -1146,15 +1302,21 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
   // out a code that already exists.
   const [nextItemNumber, setNextItemNumber] = useState(1)
   useEffect(() => {
-    if (!open || !selectedDeptCode || !selectedCategoryCode) return
-    const prefix = `20${selectedDeptCode.padStart(4, '0')}${selectedCategoryCode.padStart(4, '0')}`
+    if (!open || !selectedCategoryCode) return
+    const deptCode = selectedDeptCode || '0000'
+    const prefix = `20${deptCode.padStart(4, '0')}${selectedCategoryCode.padStart(4, '0')}`
     const token = localStorage.getItem('xantara_pos_access') ?? undefined
     let cancelled = false
     ;(async () => {
       let page = 1, hasNext = true, maxNumber = 0
       while (hasNext) {
         const data = await getProductsPage(
-          { deptcode: selectedDeptCode, categorycode: selectedCategoryCode, page }, token,
+          {
+            ...(selectedDeptCode ? { deptcode: selectedDeptCode } : {}),
+            categorycode: selectedCategoryCode,
+            page,
+          },
+          token,
         )
         data.results.forEach((p) => {
           if (!p.itemcode?.startsWith(prefix)) return
@@ -1168,8 +1330,8 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
     })().catch(() => {})
     return () => { cancelled = true }
   }, [open, selectedDeptCode, selectedCategoryCode])
-  const autoItemCode = selectedDeptCode && selectedCategoryCode
-    ? `20${selectedDeptCode.padStart(4, '0')}${selectedCategoryCode.padStart(4, '0')}${String(nextItemNumber).padStart(5, '0')}`
+  const autoItemCode = selectedCategoryCode
+    ? `20${(selectedDeptCode || '0000').padStart(4, '0')}${selectedCategoryCode.padStart(4, '0')}${String(nextItemNumber).padStart(5, '0')}`
     : ''
   const itemCode: ItemCodeState = {
     mode:     itemCodeMode,
@@ -1298,6 +1460,20 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
     }
   }
 
+  const advancedProduct = makeProduct({
+    ...(editingProduct ?? {}),
+    itemcode: itemCode.resolved,
+    descshort: basicProductName,
+    categorycode: selectedCategoryCode,
+    sell_uom: basicUnit,
+    sell_price_rp: Number(basicRetailPrice) || 0,
+    taxcode: basicTaxCode,
+    stock_sa: Number(basicStockOnHand) || 0,
+    stock_rop: Number(basicReorderPoint) || 0,
+    trackinventory: basicTrackInventory,
+    active: basicActive,
+  })
+
   if (!open) return null
 
   return (
@@ -1306,20 +1482,31 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
       <div className="fixed inset-0 z-50 flex items-center justify-center p-2 pointer-events-none">
         <div
           onClick={(e) => e.stopPropagation()}
-          className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-[98vw] h-[97vh]
-            flex flex-col"
+          className={`pointer-events-auto bg-white rounded-2xl shadow-2xl flex flex-col
+            ${showAdvanced ? 'w-[98vw] h-[97vh]' : 'w-full max-w-2xl max-h-[92vh]'}`}
         >
           <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-100 flex-shrink-0">
             <h2 className="text-base font-bold text-neutral-800">
               {editingProduct ? 'Edit Product' : 'Add Product'}
             </h2>
-            <button type="button" onClick={onClose}
-              className="w-8 h-8 rounded-lg hover:bg-neutral-100 flex items-center justify-center transition-colors">
-              <X className="w-4 h-4 text-neutral-600" />
-            </button>
+            <div className="flex items-center gap-2">
+              {!showAdvanced && (
+                <button type="button" onClick={() => setShowAdvanced(true)}
+                  aria-label="Show advanced fields" title="Show advanced fields"
+                  className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white p-2 sm:px-3
+                    text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  <span className="hidden sm:inline">Show advanced fields</span>
+                </button>
+              )}
+              <button type="button" onClick={onClose} aria-label="Close product dialog"
+                className="w-8 h-8 rounded-lg hover:bg-neutral-100 flex items-center justify-center transition-colors">
+                <X className="w-4 h-4 text-neutral-600" />
+              </button>
+            </div>
           </div>
 
-          <div className="px-6 pt-3 flex-shrink-0">
+          {showAdvanced && <div className="px-6 pt-3 flex-shrink-0">
             <div className="flex border-b border-neutral-200">
               {TABS.map((tab) => {
                 const isActive = activeTab === tab
@@ -1340,7 +1527,7 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
                 )
               })}
             </div>
-          </div>
+          </div>}
 
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0"
             onKeyDown={(e) => {
@@ -1354,26 +1541,53 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
                 Row1 (Item Code/Barcode/QR) is identical on every tab, so it's rendered once
                 here instead of once per tab — avoids duplicate-named inputs in the form. */}
             <div className="flex-1 overflow-y-auto px-6 py-3 flex flex-col gap-2 min-h-0">
-              <Row1 itemCode={itemCode} editingProduct={editingProduct} />
-              <div className={activeTab === 'Item Definitions' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
-                <ItemDefinitionsTab editingProduct={editingProduct} dropdownOptions={{
-                  dept: deptOptions, class: classOptions, cat: catOptions,
-                  size: sizeOptions, color: colorOptions, unit: unitOptions, form: formOptions, type: typeOptions,
-                }} addHandlers={addOptions}
-                  subCategories={subCategories}
-                  onSubCategoryCreated={(s) => setSubCategories((prev) => [...prev, s])}
-                  onDeptCodeChange={setSelectedDeptCode}
-                  selectedCategoryCode={selectedCategoryCode} onCategoryCodeChange={setSelectedCategoryCode} />
-              </div>
-              <div className={activeTab === 'Item Information' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
-                <ItemInformationTab editingProduct={editingProduct} />
-              </div>
-              <div className={activeTab === 'Purchasing' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
-                <PurchasingTab editingProduct={editingProduct} />
-              </div>
-              <div className={activeTab === 'Pricing' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
-                <PricingTab editingProduct={editingProduct} />
-              </div>
+              {showAdvanced ? (
+                <>
+                  <Row1 itemCode={itemCode} editingProduct={advancedProduct} />
+                  <div className={activeTab === 'Item Definitions' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
+                    <ItemDefinitionsTab editingProduct={advancedProduct} dropdownOptions={{
+                      dept: deptOptions, class: classOptions, cat: catOptions,
+                      size: sizeOptions, color: colorOptions, unit: unitOptions, form: formOptions, type: typeOptions,
+                    }} addHandlers={addOptions}
+                      subCategories={subCategories}
+                      onSubCategoryCreated={(s) => setSubCategories((prev) => [...prev, s])}
+                      onDeptCodeChange={setSelectedDeptCode}
+                      selectedCategoryCode={selectedCategoryCode} onCategoryCodeChange={setSelectedCategoryCode} />
+                  </div>
+                  <div className={activeTab === 'Item Information' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
+                    <ItemInformationTab editingProduct={advancedProduct} />
+                  </div>
+                  <div className={activeTab === 'Purchasing' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
+                    <PurchasingTab editingProduct={advancedProduct} />
+                  </div>
+                  <div className={activeTab === 'Pricing' ? 'flex flex-col gap-2 min-h-0' : 'hidden'}>
+                    <PricingTab editingProduct={advancedProduct} />
+                  </div>
+                </>
+              ) : (
+                <BasicProductFields
+                  productName={basicProductName} onProductNameChange={setBasicProductName}
+                  itemCode={itemCode.resolved} onItemCodeChange={setItemCodeValue}
+                  itemCodeIsAuto={itemCodeMode === 'auto'}
+                  onToggleItemCodeMode={() => {
+                    if (itemCodeMode === 'auto') {
+                      setItemCodeValue(itemCode.resolved)
+                      setItemCodeMode('manual')
+                    } else {
+                      setItemCodeMode('auto')
+                    }
+                  }}
+                  categoryCode={selectedCategoryCode} onCategoryCodeChange={setSelectedCategoryCode}
+                  categoryOptions={catOptions}
+                  unit={basicUnit} onUnitChange={setBasicUnit}
+                  retailPrice={basicRetailPrice} onRetailPriceChange={setBasicRetailPrice}
+                  taxCode={basicTaxCode} onTaxCodeChange={setBasicTaxCode}
+                  stockOnHand={basicStockOnHand} onStockOnHandChange={setBasicStockOnHand}
+                  reorderPoint={basicReorderPoint} onReorderPointChange={setBasicReorderPoint}
+                  trackInventory={basicTrackInventory} onTrackInventoryChange={setBasicTrackInventory}
+                  active={basicActive} onActiveChange={setBasicActive}
+                />
+              )}
             </div>
 
             <div className="flex items-center gap-3 px-6 py-3 border-t border-neutral-100 flex-shrink-0">
@@ -1382,7 +1596,9 @@ export default function ProductDialog({ open, onClose, onCreated, editingProduct
                   bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors disabled:opacity-40">
                 Cancel
               </button>
-              <button type="submit" disabled={isSaving}
+              <button type="submit" disabled={isSaving || (!showAdvanced && (
+                !basicProductName.trim() || !itemCode.resolved.trim() || !selectedCategoryCode || !basicRetailPrice
+              ))}
                 className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-600
                   rounded-lg hover:bg-brand-800 transition-colors
                   disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
