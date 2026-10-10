@@ -119,7 +119,6 @@ export async function getProductStock(id: number, token?: string): Promise<Produ
   return apiFetch<ProductStockEntry[]>(`/api/v1/products/${id}/stock/`, {}, token ?? undefined)
 }
 
-// Shape not yet confirmed against the real backend response — adjust once verified.
 export interface ProductStats {
   total_products:     number
   active_products:    number

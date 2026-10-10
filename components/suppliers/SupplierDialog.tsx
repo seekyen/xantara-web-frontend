@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { X, ChevronDown, Loader2 } from 'lucide-react'
 import Swal from 'sweetalert2'
 import NumericField from '@/components/fields/NumericField'
@@ -29,8 +29,45 @@ import {
   getSupplierProductCategories, createSupplierProductCategory, updateSupplierProductCategory,
 } from '@/lib/api/suppliers/productCategory'
 
-const TABS = ['Basic Info', 'Address', 'Business Terms'] as const
-type Tab = typeof TABS[number]
+// Basic covers everyday setup; Advanced reveals all optional supplier details.
+const TIERS = [
+  { label: 'Basic', description: 'Name, contact and status' },
+  { label: 'Advanced', description: 'Terms, legal, banking, addresses and performance' },
+] as const
+
+const SECTION_SHADES: Record<string, string> = {
+  Identification: 'from-green-50 to-green-100 text-green-950',
+  'Primary Contact': 'from-green-100 to-green-200 text-green-950',
+  Classification: 'from-green-200 to-green-300 text-green-950',
+  'Default Terms': 'from-green-300 to-green-400 text-green-950',
+  'Legal & Tax': 'from-green-400 to-green-500 text-green-950',
+  'Bank Detail': 'from-green-600 to-green-700 text-white',
+  Procurement: 'from-green-600 to-green-700 text-white',
+  'Billing Address': 'from-green-600 to-green-700 text-white',
+  'Shipping/Pickup Address': 'from-green-700 to-green-800 text-white',
+  Performance: 'from-green-700 to-green-800 text-white',
+  Audit: 'from-green-800 to-green-900 text-white',
+}
+
+function SupplierSection({ title, children, headerExtra, defaultOpen = false }: {
+  title: string; children: React.ReactNode; headerExtra?: React.ReactNode; defaultOpen?: boolean
+}) {
+  const [expanded, setExpanded] = useState(defaultOpen)
+  const id = useId()
+  return <section className="rounded-xl border border-green-200 overflow-hidden flex-shrink-0"
+    onInvalidCapture={() => setExpanded(true)}>
+    <button type="button" aria-expanded={expanded} aria-controls={id}
+      onClick={() => setExpanded(value => !value)}
+      className={'w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r text-left hover:brightness-95 focus-visible:outline-2 focus-visible:outline-green-700 focus-visible:-outline-offset-2 ' + SECTION_SHADES[title]}>
+      <span className="text-sm font-semibold">{title}</span>
+      <ChevronDown className={'w-4 h-4 transition-transform ' + (expanded ? 'rotate-180' : '')} />
+    </button>
+    <div id={id} hidden={!expanded} className="p-3 space-y-3">
+      {headerExtra && <div className="flex justify-end">{headerExtra}</div>}
+      {children}
+    </div>
+  </section>
+}
 
 interface SupplierDialogProps {
   open:      boolean
@@ -62,7 +99,7 @@ function InlineField({ label, labelWidth = 'w-40', span2, defaultValue, value, p
   readOnly?: boolean
 }) {
   return (
-    <div className={`flex items-center gap-2 min-w-0 ${span2 ? 'col-span-2' : ''}`}>
+    <div className={`flex items-center gap-2 min-w-0 ${span2 ? 'sm:col-span-2' : ''}`}>
       <label className={`${labelWidth} flex-shrink-0 text-sm text-neutral-600`}>
         {label}{required && ' *'}
       </label>
@@ -74,7 +111,7 @@ function InlineField({ label, labelWidth = 'w-40', span2, defaultValue, value, p
         }}
         placeholder={placeholder ?? `Enter ${label.toLowerCase()}…`}
         className={`flex-1 min-w-0 w-full px-3 py-2 text-sm border border-neutral-200 rounded-md
-          focus:outline-none focus:ring-2 focus:ring-brand-600
+          focus:outline-none focus:ring-2 focus:ring-green-600
           ${readOnly ? 'bg-neutral-100 text-neutral-500 cursor-not-allowed' : ''}`} />
     </div>
   )
@@ -89,7 +126,7 @@ function InlineSelect({ label, labelWidth = 'w-40', options, defaultValue, name 
       <div className="relative flex-1 min-w-0">
         <select name={name} defaultValue={defaultValue ?? options[0]}
           className="w-full appearance-none px-3 py-2 text-sm border border-neutral-200 rounded-md bg-white
-            focus:outline-none focus:ring-2 focus:ring-brand-600">
+            focus:outline-none focus:ring-2 focus:ring-green-600">
           {options.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -132,61 +169,118 @@ function AddressFieldset({ legend, prefix, defaultValue, disabled, headerExtra }
   const [city, setCity] = useState(defaultValue?.city ?? '')
   const metro = isMetroManila(city)
   return (
-    <div className="border border-neutral-200 rounded-lg p-3 flex flex-col gap-2.5">
-      <div className="flex items-center justify-between gap-2 px-1">
-        <span className="text-xs font-semibold text-neutral-500">{legend}</span>
-        {headerExtra}
-      </div>
+    <SupplierSection title={legend} headerExtra={headerExtra}>
       <fieldset disabled={disabled} className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 m-0 p-0 border-0">
         <InlineField label="Unit/House/Bldg No." labelWidth="w-40" name={`${prefix}_unit_bldg_no`} defaultValue={defaultValue?.unit_bldg_no ?? ''} />
         <InlineField label="Street" labelWidth="w-40" name={`${prefix}_street`} defaultValue={defaultValue?.street ?? ''} />
         <InlineField label="Subdivision/Village" labelWidth="w-40" name={`${prefix}_subdivision`} defaultValue={defaultValue?.subdivision ?? ''} />
-        <InlineField label="Barangay" labelWidth="w-40" name={`${prefix}_barangay`} defaultValue={defaultValue?.barangay ?? ''} required />
+        {/* Not HTML-required: these fieldsets stay mounted but hidden on the collapsed
+            sections (see the dialog shell below), and a `required` field inside a display:none
+            ancestor still blocks native form submission — Chrome logs "not focusable" and
+            silently refuses to submit rather than showing a validation message. */}
+        <InlineField label="Barangay" labelWidth="w-40" name={`${prefix}_barangay`} defaultValue={defaultValue?.barangay ?? ''} />
         <InlineField label="City/Municipality" labelWidth="w-40" name={`${prefix}_city`} defaultValue={defaultValue?.city ?? ''}
-          required onChange={setCity} />
+          onChange={setCity} />
         {!metro && (
-          <InlineField label="Province" labelWidth="w-40" name={`${prefix}_province`} defaultValue={defaultValue?.province ?? ''} required />
+          <InlineField label="Province" labelWidth="w-40" name={`${prefix}_province`} defaultValue={defaultValue?.province ?? ''} />
         )}
         <InlineField label="Region" labelWidth="w-40" name={`${prefix}_region`} defaultValue={defaultValue?.region ?? ''} />
         <InlineField label="ZIP/Postal Code" labelWidth="w-40" name={`${prefix}_postal_code`} defaultValue={defaultValue?.postal_code ?? ''} />
         <InlineField label="Country" labelWidth="w-40" name={`${prefix}_country`} defaultValue={defaultValue?.country ?? 'Philippines'} />
       </fieldset>
-    </div>
+    </SupplierSection>
   )
 }
 
-// ── Tabs ─────────────────────────────────────────────────────────────────────────
+// ── Tier sections ────────────────────────────────────────────────────────────────
+// Each section is a self-contained fieldset; the dialog shell below decides which tiers
+// are revealed, but every section stays mounted (visibility toggled via CSS) so FormData
+// always collects the full record regardless of which tier is currently selected.
 
-function BasicInfoTab({ s, c, supplierCode }: { s?: Supplier | null; c?: SupplierContact | null; supplierCode: string }) {
+function BasicSection({ s, c, supplierCode }: { s?: Supplier | null; c?: SupplierContact | null; supplierCode: string }) {
   return (
     <>
-      <fieldset className="grid grid-cols-1 xl:grid-cols-2 gap-4 border border-neutral-200 rounded-lg p-3 flex-shrink-0 m-0">
-        <legend className="px-2 text-xs font-semibold text-neutral-500">Identification</legend>
+      <SupplierSection title="Identification" defaultOpen>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <InlineField label="Supplier Code" name="supplier_code" value={supplierCode} readOnly required />
         <InlineField label="Company Name" name="company_name" defaultValue={s?.company_name} required />
-        <InlineField label="Trade Name" name="trade_name" defaultValue={s?.trade_name ?? ''} />
-        <InlineField label="Legal/Registered Name" name="legal_name" defaultValue={s?.legal_name ?? ''} />
-      </fieldset>
+        <ToggleField label="Active" name="is_active" defaultValue={s?.is_active ?? true} />
+      </div>
+      </SupplierSection>
 
-      <fieldset className="grid grid-cols-1 xl:grid-cols-2 gap-4 border border-neutral-200 rounded-lg p-3 flex-shrink-0 m-0">
-        <legend className="px-2 text-xs font-semibold text-neutral-500">Primary Contact</legend>
+      <SupplierSection title="Primary Contact" defaultOpen>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <InlineField label="Contact Name" name="contact_name" defaultValue={c?.contact_name ?? ''} />
-        <InlineField label="Position" name="position" defaultValue={c?.position ?? ''} />
         <InlineField label="Phone" name="phone" type="tel" defaultValue={c?.phone ?? ''} />
-        <InlineField label="Email" name="email" type="email" defaultValue={c?.email ?? ''} />
-      </fieldset>
+        <InlineField label="Email" name="email" type="email" defaultValue={c?.email ?? ''} span2 />
+      </div>
+      </SupplierSection>
     </>
   )
 }
 
-function AddressTab({ billing, shipping, shippingSameAsBilling, onShippingSameAsBillingChange }: {
-  billing?: SupplierAddress | null; shipping?: SupplierAddress | null
+function StandardSection({ s, c, cat }: { s?: Supplier | null; c?: SupplierContact | null; cat?: SupplierProductCategory | null }) {
+  return (
+    <>
+      <SupplierSection title="Classification">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <InlineField label="Trade Name" name="trade_name" defaultValue={s?.trade_name ?? ''} />
+        <InlineField label="Position" name="position" defaultValue={c?.position ?? ''} />
+        <InlineSelect label="Supplier Type" name="supplier_type" options={SUPPLIER_TYPES} defaultValue={s?.supplier_type} />
+        <ToggleField label="Accredited" name="is_accredited" defaultValue={s?.is_accredited ?? false} />
+      </div>
+      </SupplierSection>
+
+      <SupplierSection title="Default Terms">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <InlineSelect label="Payment Terms" name="payment_terms" options={PAYMENT_TERMS} defaultValue={s?.payment_terms} />
+        <InlineSelect label="Payment Method" name="preferred_payment_method" options={PAYMENT_METHODS} defaultValue={s?.preferred_payment_method ?? undefined} />
+        <InlineSelect label="Currency" name="currency" options={CURRENCIES} defaultValue={s?.currency} />
+        <InlineField label="Product/Category Supplied" name="category_name" defaultValue={cat?.category_name ?? ''} />
+      </div>
+      </SupplierSection>
+    </>
+  )
+}
+
+function MediumSection({ s, b, billing }: { s?: Supplier | null; b?: SupplierBankDetail | null; billing?: SupplierAddress | null }) {
+  return (
+    <>
+      <SupplierSection title="Legal & Tax">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <InlineField label="Legal/Registered Name" name="legal_name" defaultValue={s?.legal_name ?? ''} span2 />
+        <InlineField label="TIN" name="tin" defaultValue={s?.tin ?? ''} />
+        <InlineField label="Business Permit No." name="business_permit_no" defaultValue={s?.business_permit_no ?? ''} />
+        <ToggleField label="VAT Registered" name="is_vat_registered" defaultValue={s?.is_vat_registered ?? false} />
+      </div>
+      </SupplierSection>
+
+      <SupplierSection title="Bank Detail">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <InlineField label="Bank Name" name="bank_name" defaultValue={b?.bank_name ?? ''} />
+        <InlineField label="Account Name" name="account_name" defaultValue={b?.account_name ?? ''} />
+        <InlineField label="Account Number" name="account_number" defaultValue={b?.account_number ?? ''} span2 />
+      </div>
+      </SupplierSection>
+
+      <SupplierSection title="Procurement">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <NumericField label="Lead Time (days)" name="lead_time_days" defaultValue={s?.lead_time_days?.toString()} />
+        <NumericField label="Minimum Order Qty" name="minimum_order_quantity" defaultValue={s?.minimum_order_quantity?.toString()} />
+      </div>
+      </SupplierSection>
+
+      <AddressFieldset legend="Billing Address" prefix="billing" defaultValue={billing} />
+    </>
+  )
+}
+
+function LargeSection({ s, billing, shipping, shippingSameAsBilling, onShippingSameAsBillingChange }: {
+  s?: Supplier | null; billing?: SupplierAddress | null; shipping?: SupplierAddress | null
   shippingSameAsBilling: boolean; onShippingSameAsBillingChange: (v: boolean) => void
 }) {
   return (
     <>
-      <AddressFieldset legend="Billing Address" prefix="billing" defaultValue={billing} />
-
       <AddressFieldset key={String(shippingSameAsBilling)} legend="Shipping/Pickup Address" prefix="shipping"
         defaultValue={shippingSameAsBilling ? billing : shipping}
         disabled={shippingSameAsBilling}
@@ -198,72 +292,30 @@ function AddressTab({ billing, shipping, shippingSameAsBilling, onShippingSameAs
             Same as billing address
           </label>
         } />
-    </>
-  )
-}
 
-function StatusTab({ s }: { s?: Supplier | null }) {
-  return (
-    <fieldset className="grid grid-cols-1 xl:grid-cols-2 gap-4 border border-neutral-200 rounded-lg p-3 flex-shrink-0 m-0">
-      <legend className="px-2 text-xs font-semibold text-neutral-500">Status &amp; Classification</legend>
-      <div className="flex flex-col gap-2.5">
-        <ToggleField label="Active" name="is_active" defaultValue={s?.is_active ?? true} />
-        <InlineSelect label="Supplier Type" name="supplier_type" options={SUPPLIER_TYPES} defaultValue={s?.supplier_type} />
-      </div>
-      <div className="flex flex-col gap-2.5">
-        <ToggleField label="Accredited" name="is_accredited" defaultValue={s?.is_accredited ?? false} />
+      <SupplierSection title="Performance">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <NumericField label="Rating (0–5)" name="rating" defaultValue={s?.rating ?? ''} />
       </div>
-    </fieldset>
-  )
-}
+      </SupplierSection>
 
-function BusinessTermsTab({ s, b }: { s?: Supplier | null; b?: SupplierBankDetail | null }) {
-  return (
-    <>
-      <fieldset className="grid grid-cols-1 xl:grid-cols-2 gap-4 border border-neutral-200 rounded-lg p-3 flex-shrink-0 m-0">
-        <legend className="px-2 text-xs font-semibold text-neutral-500">Legal, Tax &amp; Financial</legend>
-        <div className="flex flex-col gap-2.5">
-          <InlineField label="TIN" name="tin" defaultValue={s?.tin ?? ''} />
-          <InlineField label="Business Permit No." name="business_permit_no" defaultValue={s?.business_permit_no ?? ''} />
-          <ToggleField label="VAT Registered" name="is_vat_registered" defaultValue={s?.is_vat_registered ?? false} />
+      {s && (
+        <SupplierSection title="Audit">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <DateField label="Date Created" labelWidth="w-32" defaultValue={s.created_at?.slice(0, 10)} />
+          <DateField label="Last Updated" labelWidth="w-32" defaultValue={s.updated_at?.slice(0, 10)} />
         </div>
-        <div className="flex flex-col gap-2.5">
-          <InlineSelect label="Payment Terms" name="payment_terms" options={PAYMENT_TERMS} defaultValue={s?.payment_terms} />
-          <InlineSelect label="Payment Method" name="preferred_payment_method" options={PAYMENT_METHODS} defaultValue={s?.preferred_payment_method ?? undefined} />
-          <InlineSelect label="Currency" name="currency" options={CURRENCIES} defaultValue={s?.currency} />
-        </div>
-      </fieldset>
-
-      <fieldset className="grid grid-cols-1 xl:grid-cols-2 gap-4 border border-neutral-200 rounded-lg p-3 flex-shrink-0 m-0">
-        <legend className="px-2 text-xs font-semibold text-neutral-500">Bank Detail</legend>
-        <InlineField label="Bank Name" name="bank_name" defaultValue={b?.bank_name ?? ''} />
-        <InlineField label="Account Name" name="account_name" defaultValue={b?.account_name ?? ''} />
-        <InlineField label="Account Number" name="account_number" defaultValue={b?.account_number ?? ''} />
-      </fieldset>
+      </SupplierSection>
+      )}
     </>
-  )
-}
-
-function ProcurementTab({ s, cat }: { s?: Supplier | null; cat?: SupplierProductCategory | null }) {
-  return (
-    <fieldset className="grid grid-cols-1 xl:grid-cols-2 gap-4 border border-neutral-200 rounded-lg p-3 flex-shrink-0 m-0">
-      <legend className="px-2 text-xs font-semibold text-neutral-500">Procurement</legend>
-      <div className="flex flex-col gap-2.5">
-        <NumericField label="Lead Time (days)" name="lead_time_days" defaultValue={s?.lead_time_days?.toString()} />
-        <NumericField label="Minimum Order Qty" name="minimum_order_quantity" defaultValue={s?.minimum_order_quantity?.toString()} />
-      </div>
-      <div className="flex flex-col gap-2.5">
-        <InlineField label="Product/Category Supplied" name="category_name" defaultValue={cat?.category_name ?? ''} />
-      </div>
-    </fieldset>
   )
 }
 
 // ── Dialog shell ─────────────────────────────────────────────────────────────────
 
 export default function SupplierDialog({ open, onClose, onCreated, editingSupplier, onUpdated, elevated }: SupplierDialogProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('Basic Info')
+  // Existing suppliers start in Advanced so all saved detail groups are available.
+  const [tier, setTier] = useState(() => (editingSupplier ? TIERS.length - 1 : 0))
   const [isSaving, setIsSaving]   = useState(false)
   const [shippingSameAsBilling, setShippingSameAsBilling] = useState(false)
 
@@ -460,51 +512,51 @@ export default function SupplierDialog({ open, onClose, onCreated, editingSuppli
           ) : (
             <>
               <div className="px-6 pt-3 flex-shrink-0">
-                <div className="flex border-b border-neutral-200">
-                  {TABS.map((tab) => {
-                    const isActive = activeTab === tab
-                    return (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => setActiveTab(tab)}
-                        className={`relative -mb-px flex-1 px-2 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold border border-neutral-200
-                          rounded-t-lg text-center transition-colors
-                          ${isActive
-                            ? 'bg-white text-neutral-800 border-b-white z-10'
-                            : 'bg-neutral-50 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700'
-                          }`}
-                      >
-                        {tab}
-                      </button>
-                    )
-                  })}
+                <div className="grid grid-cols-2 gap-2">
+                  {TIERS.map((t, i) => (
+                    <button key={t.label} type="button" onClick={() => setTier(i)} aria-pressed={i === tier}
+                      className={`text-left rounded-xl p-2.5 border transition-colors
+                        ${i === tier
+                          ? 'border-green-600 bg-gradient-to-r from-green-50 to-green-100 text-green-900'
+                          : 'border-neutral-200 text-neutral-500 hover:bg-neutral-50'
+                        }`}>
+                      <span className="font-bold text-xs sm:text-sm block">{t.label}</span>
+                      <span className="text-[11px] sm:text-xs">{t.description}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-                {/* All 3 tabs stay mounted (toggled via CSS, not conditional rendering) so FormData
-                    collects every field regardless of which tab was last active. */}
+              <form onSubmit={handleSubmit} onInvalidCapture={e => {
+                const input = e.target as HTMLInputElement
+                if (input.getClientRects().length) return
+                // Expand hidden invalid fields before displaying native validation.
+                e.preventDefault()
+                if (input.closest('[data-advanced]')) setTier(1)
+                requestAnimationFrame(() => {
+                  if (input.form?.querySelector(':invalid') === input) {
+                    input.focus()
+                    input.reportValidity()
+                  }
+                })
+              }} className="flex-1 flex flex-col min-h-0">
+                {/* Every tier's sections stay mounted (visibility toggled via CSS, not conditional
+                    rendering) so FormData always collects the full record on submit, cumulatively
+                    revealing more detail as the tier increases rather than gating what gets saved. */}
                 <div className="flex-1 overflow-y-auto px-6 py-3 flex flex-col gap-3 min-h-0">
-                  {editingSupplier && (
-                    <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-3 border border-neutral-200 rounded-lg p-3 flex-shrink-0 m-0">
-                      <legend className="px-2 text-xs font-semibold text-neutral-500">Audit</legend>
-                      <DateField label="Date Created" labelWidth="w-32" defaultValue={editingSupplier.created_at?.slice(0, 10)} />
-                      <DateField label="Last Updated" labelWidth="w-32" defaultValue={editingSupplier.updated_at?.slice(0, 10)} />
-                    </fieldset>
-                  )}
-                  <div className={activeTab === 'Basic Info' ? 'flex flex-col gap-3 min-h-0' : 'hidden'}>
-                    <BasicInfoTab s={editingSupplier} c={contact} supplierCode={supplierCode} />
-                    <StatusTab s={editingSupplier} />
+                  <div className={tier >= 0 ? 'flex flex-col gap-3' : 'hidden'}>
+                    <BasicSection s={editingSupplier} c={contact} supplierCode={supplierCode} />
                   </div>
-                  <div className={activeTab === 'Address' ? 'flex flex-col gap-3 min-h-0' : 'hidden'}>
-                    <AddressTab billing={billingAddr} shipping={shippingAddr}
+                  <div data-advanced className={tier >= 1 ? 'flex flex-col gap-3' : 'hidden'}>
+                    <StandardSection s={editingSupplier} c={contact} cat={productCategory} />
+                  </div>
+                  <div data-advanced className={tier >= 1 ? 'flex flex-col gap-3' : 'hidden'}>
+                    <MediumSection s={editingSupplier} b={bankDetail} billing={billingAddr} />
+                  </div>
+                  <div data-advanced className={tier >= 1 ? 'flex flex-col gap-3' : 'hidden'}>
+                    <LargeSection s={editingSupplier} billing={billingAddr} shipping={shippingAddr}
                       shippingSameAsBilling={shippingSameAsBilling}
                       onShippingSameAsBillingChange={setShippingSameAsBilling} />
-                  </div>
-                  <div className={activeTab === 'Business Terms' ? 'flex flex-col gap-3 min-h-0' : 'hidden'}>
-                    <BusinessTermsTab s={editingSupplier} b={bankDetail} />
-                    <ProcurementTab s={editingSupplier} cat={productCategory} />
                   </div>
                 </div>
 
@@ -515,8 +567,8 @@ export default function SupplierDialog({ open, onClose, onCreated, editingSuppli
                     Cancel
                   </button>
                   <button type="submit" disabled={isSaving || codeLoading}
-                    className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-600
-                      rounded-lg hover:bg-brand-800 transition-colors
+                    className="flex-1 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-800
+                      rounded-lg hover:brightness-95 transition-colors
                       disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                     {(isSaving || codeLoading) && <Loader2 className="w-4 h-4 animate-spin" />}
                     {editingSupplier ? 'Save Changes' : 'Add Supplier'}

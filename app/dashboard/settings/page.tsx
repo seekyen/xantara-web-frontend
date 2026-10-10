@@ -6,6 +6,7 @@ import {
   Check, RefreshCw, Tag, Search, Plus, X, Pencil, Trash2, Loader2, SlidersHorizontal,
 } from 'lucide-react'
 import Swal from 'sweetalert2'
+import CompanyRegistrationPanel from '@/components/settings/CompanyRegistrationPanel'
 import ConfirmModal from '@/components/shared/ConfirmModal'
 import BarcodePreview from '@/components/shared/BarcodePreview'
 import QRCodePreview from '@/components/shared/QRCodePreview'
@@ -28,6 +29,7 @@ import { type Color,     getColorsPaged,  createColor, updateColor, deleteColor 
 import { type Unit,      getUnitsPaged,   createUnit,  updateUnit,  deleteUnit  } from '@/lib/api/settings/unit'
 import { type ItemForm,  getFormsPaged,   createForm,  updateForm,  deleteForm  } from '@/lib/api/settings/form'
 import { type ItemType,  getItemTypesPaged, createItemType, updateItemType, deleteItemType } from '@/lib/api/settings/itemType'
+import { getStoreSettings, updateStoreSettings, type StoreSettingsWriteData } from '@/lib/api/settings/storeSettings'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,7 @@ function apiErrorMessage(error: unknown, fallback: string): string {
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
 const TABS = [
+  { id: 'company', label: 'Company & BIR Details', icon: Store },
   { id: 'general',       label: 'General',       icon: Store      },
   { id: 'payments',      label: 'Payments',       icon: CreditCard },
   { id: 'receipts',      label: 'Receipts',       icon: Receipt    },
@@ -160,11 +163,20 @@ export default function SettingsPage() {
   const [tab, setTab] = useState('general')
 
   // ── General ──
-  const [storeName, setStoreName] = useState('Xantara Makati')
-  const [address,   setAddress]   = useState('123 Ayala Ave, Makati City')
-  const [phone,     setPhone]     = useState('02-8123-4567')
-  const [email,     setEmail]     = useState('makati@xantara.com')
-  const [savedMsg,  setSavedMsg]  = useState(false)
+  // These fields (through Notifications' low-stock threshold below) mirror the
+  // backend's singleton StoreSettings record (GET/PATCH /api/v1/settings/) — the
+  // one settings surface shared with the Flutter app, as opposed to per-device
+  // preferences like theme or PIN that stay local to each app.
+  const [storeName,      setStoreName]      = useState('Xantara Makati')
+  const [address,        setAddress]        = useState('123 Ayala Ave, Makati City')
+  const [phone,          setPhone]          = useState('02-8123-4567')
+  const [email,          setEmail]          = useState('makati@xantara.com')
+  const [currency,       setCurrency]       = useState('PHP')
+  const [currencySymbol, setCurrencySymbol] = useState('₱')
+  const [savedMsg,      setSavedMsg]      = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(true)
+  const [settingsSaving,  setSettingsSaving]  = useState(false)
+  const [settingsError,   setSettingsError]   = useState('')
 
   // ── General: Barcode & QR setup — both always derived from Item Code ──
   // Default format persists to localStorage so Add Product can read the same
@@ -219,9 +231,57 @@ export default function SettingsPage() {
   const [cloudBackup,    setCloudBackup]    = useState(true)
   const [showResetModal, setShowResetModal] = useState(false)
 
-  const handleSave = () => {
-    setSavedMsg(true)
-    setTimeout(() => setSavedMsg(false), 2000)
+  const token = () => localStorage.getItem('xantara_pos_access') ?? undefined
+
+  useEffect(() => {
+    let cancelled = false
+    getStoreSettings(token())
+      .then((s) => {
+        if (cancelled) return
+        setStoreName(s.store_name)
+        setAddress(s.address)
+        setPhone(s.contact_phone)
+        setEmail(s.contact_email)
+        setCurrency(s.currency)
+        setCurrencySymbol(s.currency_symbol)
+        setVatRate(String(s.vat_rate))
+        setVatInclusive(s.vat_inclusive)
+        setShowVAT(s.show_vat_receipt)
+        setVatOnReceipt(s.show_vat_receipt)
+        setReceiptHeader(s.receipt_header)
+        setReceiptFooter(s.receipt_footer)
+        setAutoPrint(s.print_auto)
+        setEmailReceipt(s.email_receipt)
+        setLowStockThreshold(String(s.low_stock_threshold))
+        setPayMethods({ cash: s.pay_cash, card: s.pay_card, gcash: s.pay_gcash, maya: s.pay_maya })
+      })
+      .catch(() => { if (!cancelled) setSettingsError('Could not load store settings. Check the backend connection and try again.') })
+      .finally(() => { if (!cancelled) setSettingsLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  const handleSave = async () => {
+    setSettingsSaving(true)
+    setSettingsError('')
+    const payload: StoreSettingsWriteData = {
+      store_name: storeName, address, contact_phone: phone, contact_email: email,
+      currency, currency_symbol: currencySymbol,
+      vat_rate: vatRate, vat_inclusive: vatInclusive, show_vat_receipt: showVAT,
+      receipt_header: receiptHeader, receipt_footer: receiptFooter,
+      print_auto: autoPrint, email_receipt: emailReceipt,
+      low_stock_threshold: Number(lowStockThreshold) || 0,
+      pay_cash: payMethods.cash, pay_card: payMethods.card, pay_gcash: payMethods.gcash, pay_maya: payMethods.maya,
+    }
+    try {
+      await updateStoreSettings(payload, token())
+      setSavedMsg(true)
+      setTimeout(() => setSavedMsg(false), 2000)
+    } catch (err) {
+      setSettingsError(apiErrorMessage(err, 'Could not save settings. Please try again.'))
+      toast('Save failed', 'error')
+    } finally {
+      setSettingsSaving(false)
+    }
   }
 
   // ── Categories ──
@@ -272,8 +332,6 @@ export default function SettingsPage() {
   const [attrEditId,   setAttrEditId]   = useState<number | null>(null)
   const [attrForm,     setAttrForm]     = useState({ name: '', is_active: true })
   const [attrDelTarget, setAttrDelTarget] = useState<AttrItem | null>(null)
-
-  const token = () => localStorage.getItem('xantara_pos_access') ?? undefined
 
   const loadCats = useCallback(async () => {
     setCatsLoading(true)
@@ -513,7 +571,17 @@ export default function SettingsPage() {
         {/* Content panel */}
         <div className="flex-1 ml-4 bg-white rounded-xl border border-neutral-200 p-6 min-h-[500px]">
 
+          {settingsError && ['general', 'payments', 'receipts', 'taxes', 'notifications'].includes(tab) && (
+            <div className="mb-5 px-4 py-3 bg-danger-50 text-danger-600 text-sm rounded-xl">{settingsError}</div>
+          )}
+          {settingsLoading && ['general', 'payments', 'receipts', 'taxes', 'notifications'].includes(tab) && (
+            <div className="mb-5 flex items-center gap-2 text-neutral-400">
+              <Loader2 className="w-4 h-4 animate-spin" /><span className="text-sm">Loading store settings…</span>
+            </div>
+          )}
+
           {/* ── GENERAL ── */}
+          {tab === 'company' && <CompanyRegistrationPanel />}
           {tab === 'general' && (
             <div className="flex gap-8 flex-wrap">
               {/* Store Information */}
@@ -527,8 +595,10 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">Currency</label>
-                  <select className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
-                    <option>PHP — Philippine Peso (₱)</option>
+                  <select value={currency}
+                    onChange={(e) => { setCurrency(e.target.value); setCurrencySymbol(e.target.value === 'PHP' ? '₱' : e.target.value === 'USD' ? '$' : e.target.value) }}
+                    className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                    <option value="PHP">PHP — Philippine Peso (₱)</option>
                   </select>
                 </div>
                 <div>
@@ -541,8 +611,9 @@ export default function SettingsPage() {
                     <p className="text-[10px] text-neutral-400">PNG, JPG up to 2MB</p>
                   </div>
                 </div>
-                <button onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors">
-                  {savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
+                <button onClick={handleSave} disabled={settingsSaving || settingsLoading}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  {settingsSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
                 </button>
               </div>
 
@@ -641,8 +712,9 @@ export default function SettingsPage() {
               {payMethods.card  && <Field label="Card Processor"    value={cardProcessor} onChange={setCardProcessor} placeholder="PayMongo"    />}
               {payMethods.gcash && <Field label="GCash Merchant ID" value={gcashId}       onChange={setGcashId}       placeholder="GC-XXXXX"    />}
               {payMethods.maya  && <Field label="Maya Merchant ID"  value={mayaId}        onChange={setMayaId}        placeholder="MAYA-XXXXX"  />}
-              <button onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors">
-                {savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
+              <button onClick={handleSave} disabled={settingsSaving || settingsLoading}
+                className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                {settingsSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
               </button>
             </div>
           )}
@@ -665,7 +737,7 @@ export default function SettingsPage() {
                 {([
                   { key: 'autoPrint',    label: 'Auto-print on checkout', val: autoPrint,    set: setAutoPrint    },
                   { key: 'emailReceipt', label: 'Send email receipt',      val: emailReceipt, set: setEmailReceipt },
-                  { key: 'showVAT',      label: 'Show VAT breakdown',       val: showVAT,      set: setShowVAT      },
+                  { key: 'showVAT',      label: 'Show VAT breakdown',       val: showVAT,      set: (v: boolean) => { setShowVAT(v); setVatOnReceipt(v) } },
                   { key: 'showCashier',  label: 'Show cashier name',        val: showCashier,  set: setShowCashier  },
                 ] as const).map(({ key, label, val, set }) => (
                   <div key={key} className="flex items-center justify-between">
@@ -673,8 +745,9 @@ export default function SettingsPage() {
                     <Toggle checked={val} onChange={set} />
                   </div>
                 ))}
-                <button onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors">
-                  {savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
+                <button onClick={handleSave} disabled={settingsSaving || settingsLoading}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  {settingsSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
                 </button>
               </div>
               <div>
@@ -699,7 +772,7 @@ export default function SettingsPage() {
               </div>
               {([
                 { label: 'VAT Inclusive',       val: vatInclusive, set: setVatInclusive },
-                { label: 'Show VAT on Receipt', val: vatOnReceipt, set: setVatOnReceipt },
+                { label: 'Show VAT on Receipt', val: vatOnReceipt, set: (v: boolean) => { setVatOnReceipt(v); setShowVAT(v) } },
               ] as const).map(({ label, val, set }) => (
                 <div key={label} className="flex items-center justify-between">
                   <span className="text-sm text-neutral-700">{label}</span>
@@ -709,8 +782,9 @@ export default function SettingsPage() {
               <div className="p-4 bg-neutral-50 rounded-xl text-xs text-neutral-500">
                 Current effective rate: {vatInclusive ? `Price already includes ${vatRate}% VAT` : `+${vatRate}% added to price`}
               </div>
-              <button onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors">
-                {savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
+              <button onClick={handleSave} disabled={settingsSaving || settingsLoading}
+                className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                {settingsSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
               </button>
             </div>
           )}
@@ -748,8 +822,9 @@ export default function SettingsPage() {
                   </div>
                 ))}
               </div>
-              <button onClick={handleSave} className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors">
-                {savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
+              <button onClick={handleSave} disabled={settingsSaving || settingsLoading}
+                className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                {settingsSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : savedMsg ? <><Check className="w-4 h-4" /> Saved!</> : 'Save Changes'}
               </button>
             </div>
           )}

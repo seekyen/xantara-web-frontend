@@ -1,11 +1,14 @@
 'use client'
 
-// TODO: Replace MOCK_DATA with API call → GET /api/customers
-
-import { useState } from 'react'
-import { Search, Plus, Star, Mail, Phone, Pencil, Trash2 } from 'lucide-react'
-import { type Customer } from '@/lib/mock/customers'
+import { useEffect, useState } from 'react'
+import { Search, Plus, Star, Mail, Phone, Pencil, Trash2, Loader2 } from 'lucide-react'
+import {
+  type Customer, type CustomerStatus,
+  createCustomer, updateCustomer,
+} from '@/lib/api/customers'
+import { type LoyaltyEntry, getCustomerLoyalty } from '@/lib/api/loyalty'
 import { usePOS }      from '@/context/POSContext'
+import LoyaltyProgramPanel from '@/components/customers/LoyaltyProgramPanel'
 import Badge           from '@/components/shared/Badge'
 import EmptyState      from '@/components/shared/EmptyState'
 import DrawerModal     from '@/components/shared/DrawerModal'
@@ -14,10 +17,12 @@ import Pagination      from '@/components/shared/Pagination'
 
 const PAGE_SIZE = 10
 
-function fmt(n: number) { return `₱${n.toLocaleString('en-PH')}` }
+const authToken = () => localStorage.getItem('xantara_pos_access') ?? undefined
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+function fmt(n: number) { return `₱${Number(n).toLocaleString('en-PH')}` }
+
+function formatDate(iso: string | null) {
+  return iso ? new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 }
 
 function Initials({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
@@ -32,7 +37,7 @@ function Initials({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'l
   )
 }
 
-const EMPTY_FORM = { name: '', email: '', phone: '', status: 'Active' as Customer['status'] }
+const EMPTY_FORM = { name: '', email: '', phone: '', status: 'active' as CustomerStatus }
 type FormState   = typeof EMPTY_FORM
 
 function CustomerFormFields({ state, onChange }: {
@@ -43,8 +48,8 @@ function CustomerFormFields({ state, onChange }: {
     <div className="px-6 py-5 space-y-4">
       {([
         { key: 'name',  label: 'Full Name *', type: 'text',  placeholder: 'Maria Santos' },
-        { key: 'email', label: 'Email *',      type: 'email', placeholder: 'maria@email.com' },
-        { key: 'phone', label: 'Phone *',      type: 'tel',   placeholder: '09XXXXXXXXX' },
+        { key: 'email', label: 'Email',       type: 'email', placeholder: 'maria@email.com' },
+        { key: 'phone', label: 'Phone',       type: 'tel',   placeholder: '09XXXXXXXXX' },
       ] as const).map(({ key, label, type, placeholder }) => (
         <div key={key}>
           <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-1.5">
@@ -62,11 +67,11 @@ function CustomerFormFields({ state, onChange }: {
           Status
         </label>
         <select value={state.status}
-          onChange={(event) => onChange({ ...state, status: event.target.value as Customer['status'] })}
+          onChange={(event) => onChange({ ...state, status: event.target.value as CustomerStatus })}
           className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
             focus:outline-none focus:ring-2 focus:ring-brand-600">
-          <option>Active</option>
-          <option>Inactive</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
         </select>
       </div>
     </div>
@@ -74,10 +79,10 @@ function CustomerFormFields({ state, onChange }: {
 }
 
 export default function CustomersPage() {
-  const { customers, setCustomers, transactions } = usePOS()
+  const { customers, setCustomers, customersLoading, transactions } = usePOS()
 
   const [search,    setSearch]    = useState('')
-  const [statusFlt, setStatusFlt] = useState('All')
+  const [statusFlt, setStatusFlt] = useState<'All' | CustomerStatus>('All')
   const [sortBy,    setSortBy]    = useState('most-spent')
   const [page,      setPage]      = useState(1)
 
@@ -86,12 +91,29 @@ export default function CustomersPage() {
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null)
   const [isAddOpen,    setIsAddOpen]    = useState(false)
   const [form,         setForm]         = useState<FormState>(EMPTY_FORM)
+  const [isSaving,     setIsSaving]     = useState(false)
+  const [formError,    setFormError]    = useState('')
+  const [history, setHistory] = useState<{ id: number; rows: LoyaltyEntry[] } | null>(null)
+
+  // Points ledger for the customer shown in the drawer (earned and reversed, newest first);
+  // `null` while it loads or when the loaded rows belong to a previously opened customer.
+  const viewId = viewTarget?.id
+  useEffect(() => {
+    if (viewId === undefined) return
+    let cancelled = false
+    getCustomerLoyalty(viewId, authToken())
+      .then((rows) => { if (!cancelled) setHistory({ id: viewId, rows }) })
+      .catch(() => { if (!cancelled) setHistory({ id: viewId, rows: [] }) })
+    return () => { cancelled = true }
+  }, [viewId])
+  const pointsHistory = history && history.id === viewId ? history.rows : null
 
   // ── Stats ──
-  const activeCount  = customers.filter((c) => c.status === 'Active').length
-  const newThisMonth = customers.filter((c) => c.joinedAt >= '2026-05-01').length
+  const activeCount  = customers.filter((c) => c.status === 'active').length
+  const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
+  const newThisMonth = customers.filter((c) => new Date(c.joined_at) >= startOfMonth).length
   const avgLTV       = customers.length
-    ? Math.round(customers.reduce((s, c) => s + c.totalSpent, 0) / customers.length)
+    ? Math.round(customers.reduce((s, c) => s + Number(c.total_spent), 0) / customers.length)
     : 0
 
   // ── Filter + sort ──
@@ -99,16 +121,16 @@ export default function CustomersPage() {
     .filter((c) =>
       search
         ? c.name.toLowerCase().includes(search.toLowerCase()) ||
-          c.email.toLowerCase().includes(search.toLowerCase()) ||
+          (c.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
           c.phone.includes(search)
         : true
     )
     .filter((c) => statusFlt !== 'All' ? c.status === statusFlt : true)
     .sort((a, b) => {
-      if (sortBy === 'most-spent')    return b.totalSpent - a.totalSpent
-      if (sortBy === 'most-orders')   return b.totalOrders - a.totalOrders
-      if (sortBy === 'recent')        return b.lastVisit.localeCompare(a.lastVisit)
-      if (sortBy === 'newest')        return b.joinedAt.localeCompare(a.joinedAt)
+      if (sortBy === 'most-spent')  return Number(b.total_spent) - Number(a.total_spent)
+      if (sortBy === 'most-orders') return b.total_orders - a.total_orders
+      if (sortBy === 'recent')      return (b.last_visit ?? '').localeCompare(a.last_visit ?? '')
+      if (sortBy === 'newest')      return b.joined_at.localeCompare(a.joined_at)
       return 0
     })
 
@@ -116,42 +138,68 @@ export default function CustomersPage() {
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   // ── CRUD ──
-  const handleAdd = () => {
-    setCustomers((prev) => [{
-      id: `c${Date.now()}`, name: form.name, email: form.email, phone: form.phone,
-      totalSpent: 0, totalOrders: 0, status: form.status,
-      lastVisit: new Date().toISOString().split('T')[0],
-      joinedAt:  new Date().toISOString().split('T')[0],
-      loyaltyPoints: 0,
-    }, ...prev])
-    setIsAddOpen(false)
-    setForm(EMPTY_FORM)
+  const handleAdd = async () => {
+    setIsSaving(true); setFormError('')
+    try {
+      const created = await createCustomer(
+        { name: form.name, email: form.email || undefined, phone: form.phone, status: form.status },
+        authToken(),
+      )
+      setCustomers((prev) => [created, ...prev])
+      setIsAddOpen(false)
+      setForm(EMPTY_FORM)
+    } catch {
+      setFormError('Could not add customer. Please check your connection and try again.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     if (!editTarget) return
-    setCustomers((prev) => prev.map((c) =>
-      c.id === editTarget.id
-        ? { ...c, name: form.name, email: form.email, phone: form.phone, status: form.status }
-        : c
-    ))
-    setEditTarget(null)
+    setIsSaving(true); setFormError('')
+    try {
+      const updated = await updateCustomer(
+        editTarget.id,
+        { name: form.name, email: form.email || undefined, phone: form.phone, status: form.status },
+        authToken(),
+      )
+      setCustomers((prev) => prev.map((c) => c.id === updated.id ? updated : c))
+      setEditTarget(null)
+    } catch {
+      setFormError('Could not save changes. Please check your connection and try again.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  const handleDelete = () => {
+  // "Deactivate" flips status rather than hard-deleting — customers are referenced by
+  // transaction history (Transaction.customer), so removing the row outright would
+  // orphan that history instead of just hiding the customer going forward.
+  const handleDeactivate = async () => {
     if (!deleteTarget) return
-    setCustomers((prev) => prev.filter((c) => c.id !== deleteTarget.id))
-    setDeleteTarget(null)
+    setIsSaving(true)
+    try {
+      const updated = await updateCustomer(deleteTarget.id, { status: 'inactive' }, authToken())
+      setCustomers((prev) => prev.map((c) => c.id === updated.id ? updated : c))
+      setDeleteTarget(null)
+    } catch {
+      // Swallow — ConfirmModal has no error slot; the customer simply stays active
+      // and the user can retry.
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const openEdit = (c: Customer) => {
     setEditTarget(c)
-    setForm({ name: c.name, email: c.email, phone: c.phone, status: c.status })
+    setFormError('')
+    setForm({ name: c.name, email: c.email ?? '', phone: c.phone, status: c.status })
   }
 
-  // ── Customer txn history ──
-  const custTxns = (id: string) =>
-    transactions.filter((t) => t.customerId === id).sort((a, b) => b.txnNo.localeCompare(a.txnNo))
+  // ── Customer txn history (from the transactions already loaded into POSContext) ──
+  const custTxns = (id: number) =>
+    transactions.filter((t) => t.customer === id).sort((a, b) => b.txn_no.localeCompare(a.txn_no))
 
   return (
     <div className="pb-8">
@@ -162,7 +210,7 @@ export default function CustomersPage() {
           <h1 className="text-xl font-bold text-neutral-800">Customers</h1>
           <p className="text-sm text-neutral-400 mt-0.5">Manage your customer base</p>
         </div>
-        <button onClick={() => { setForm(EMPTY_FORM); setIsAddOpen(true) }}
+        <button onClick={() => { setForm(EMPTY_FORM); setFormError(''); setIsAddOpen(true) }}
           className="flex items-center gap-1.5 px-4 py-2.5 bg-brand-600 text-white
             text-sm font-semibold rounded-xl hover:bg-brand-800 transition-colors">
           <Plus className="w-4 h-4" /> Add Customer
@@ -174,7 +222,7 @@ export default function CustomersPage() {
         {[
           { label: 'Total Customers', value: String(customers.length),  sub: 'all time',           color: 'text-neutral-400' },
           { label: 'Active',          value: String(activeCount),        sub: 'currently active',   color: 'text-success-600' },
-          { label: 'New This Month',  value: String(newThisMonth),       sub: 'joined in May',      color: 'text-brand-600'   },
+          { label: 'New This Month',  value: String(newThisMonth),       sub: 'joined this month',  color: 'text-brand-600'   },
           { label: 'Avg. Lifetime',   value: fmt(avgLTV),                sub: 'average spent',      color: 'text-neutral-400' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-neutral-200 p-4">
@@ -184,6 +232,9 @@ export default function CustomersPage() {
           </div>
         ))}
       </div>
+
+      {/* ── Loyalty program: earning rate and promo periods ── */}
+      <LoyaltyProgramPanel />
 
       {/* ── Filters ── */}
       <div className="flex items-center gap-3 px-6 pb-4 flex-wrap">
@@ -196,9 +247,9 @@ export default function CustomersPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          {['All','Active','Inactive'].map((s) => (
+          {(['All','active','inactive'] as const).map((s) => (
             <button key={s} onClick={() => { setStatusFlt(s); setPage(1) }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors
+              className={`px-3 py-1.5 text-xs font-semibold rounded-full capitalize transition-colors
                 ${statusFlt === s ? 'bg-brand-600 text-white' : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
               {s}
             </button>
@@ -241,37 +292,37 @@ export default function CustomersPage() {
                     <Initials name={c.name} />
                     <div>
                       <div className="text-sm font-semibold text-neutral-800">{c.name}</div>
-                      <div className="text-[10px] text-neutral-400">since {formatDate(c.joinedAt)}</div>
+                      <div className="text-[10px] text-neutral-400">since {formatDate(c.joined_at)}</div>
                     </div>
                   </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5 text-xs text-neutral-600">
-                    <Mail className="w-3 h-3" />{c.email}
+                    <Mail className="w-3 h-3" />{c.email ?? '—'}
                   </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5 text-xs text-neutral-600">
-                    <Phone className="w-3 h-3" />{c.phone}
+                    <Phone className="w-3 h-3" />{c.phone || '—'}
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-sm font-semibold text-neutral-800">{c.totalOrders}</span>
+                  <span className="text-sm font-semibold text-neutral-800">{c.total_orders}</span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <span className="text-sm font-bold text-brand-600">{fmt(c.totalSpent)}</span>
+                  <span className="text-sm font-bold text-brand-600">{fmt(c.total_spent)}</span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1 text-success-600">
                     <Star className="w-3 h-3 fill-success-600" />
-                    <span className="text-xs font-semibold">{c.loyaltyPoints}</span>
+                    <span className="text-xs font-semibold">{c.loyalty_points}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-xs text-neutral-600">{formatDate(c.lastVisit)}</span>
+                  <span className="text-xs text-neutral-600">{formatDate(c.last_visit)}</span>
                 </td>
                 <td className="px-4 py-3">
-                  <Badge variant={c.status === 'Active' ? 'success' : 'neutral'}>{c.status}</Badge>
+                  <Badge variant={c.status === 'active' ? 'success' : 'neutral'}>{c.status_display}</Badge>
                 </td>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -292,7 +343,14 @@ export default function CustomersPage() {
           </tbody>
         </table>
 
-        {paginated.length === 0 && (
+        {customersLoading && (
+          <div className="flex items-center justify-center gap-2 py-16 text-neutral-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">Loading customers…</span>
+          </div>
+        )}
+
+        {!customersLoading && paginated.length === 0 && (
           <EmptyState
             icon={<Search className="w-6 h-6 text-brand-600" />}
             title="No customers found"
@@ -334,18 +392,18 @@ export default function CustomersPage() {
               <Initials name={viewTarget.name} size="lg" />
               <div>
                 <div className="text-base font-bold text-neutral-800">{viewTarget.name}</div>
-                <div className="text-xs text-neutral-400">Member since {formatDate(viewTarget.joinedAt)}</div>
-                <Badge variant={viewTarget.status === 'Active' ? 'success' : 'neutral'} className="mt-1">
-                  {viewTarget.status}
+                <div className="text-xs text-neutral-400">Member since {formatDate(viewTarget.joined_at)}</div>
+                <Badge variant={viewTarget.status === 'active' ? 'success' : 'neutral'} className="mt-1">
+                  {viewTarget.status_display}
                 </Badge>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Total Spent',    value: fmt(viewTarget.totalSpent)   },
-                { label: 'Total Orders',   value: String(viewTarget.totalOrders) },
-                { label: 'Loyalty Points', value: `${viewTarget.loyaltyPoints} pts` },
-                { label: 'Last Visit',     value: formatDate(viewTarget.lastVisit) },
+                { label: 'Total Spent',    value: fmt(viewTarget.total_spent)   },
+                { label: 'Total Orders',   value: String(viewTarget.total_orders) },
+                { label: 'Loyalty Points', value: `${viewTarget.loyalty_points} pts` },
+                { label: 'Last Visit',     value: formatDate(viewTarget.last_visit) },
               ].map(({ label, value }) => (
                 <div key={label} className="bg-neutral-50 rounded-lg p-3">
                   <div className="text-[10px] text-neutral-400 uppercase tracking-wide">{label}</div>
@@ -358,8 +416,8 @@ export default function CustomersPage() {
                 Contact
               </div>
               <div className="space-y-1.5 text-xs text-neutral-600">
-                <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5" />{viewTarget.email}</div>
-                <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{viewTarget.phone}</div>
+                <div className="flex items-center gap-2"><Mail className="w-3.5 h-3.5" />{viewTarget.email ?? '—'}</div>
+                <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" />{viewTarget.phone || '—'}</div>
               </div>
             </div>
             <div>
@@ -373,10 +431,38 @@ export default function CustomersPage() {
                   {custTxns(viewTarget.id).slice(0, 5).map((t) => (
                     <div key={t.id} className="flex items-center justify-between text-xs">
                       <div>
-                        <span className="font-mono font-bold text-brand-600">{t.txnNo}</span>
-                        <span className="text-neutral-400 ml-2">{formatDate(t.date)}</span>
+                        <span className="font-mono font-bold text-brand-600">{t.txn_no}</span>
+                        <span className="text-neutral-400 ml-2">{formatDate(t.created_at)}</span>
                       </div>
                       <span className="font-semibold text-neutral-800">{fmt(t.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-neutral-400 uppercase tracking-wide mb-2">
+                Points History
+              </div>
+              {pointsHistory === null ? (
+                <p className="text-xs text-neutral-400">Loading…</p>
+              ) : pointsHistory.length === 0 ? (
+                <p className="text-xs text-neutral-400">No points earned yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {pointsHistory.slice(0, 10).map((entry) => (
+                    <div key={entry.id} className="flex items-center justify-between gap-3 text-xs">
+                      <div className="min-w-0">
+                        <span className="font-mono font-bold text-brand-600">{entry.txn_no ?? '—'}</span>
+                        <span className="text-neutral-400 ml-2">{formatDate(entry.created_at)}</span>
+                        <div className="text-[10px] text-neutral-400 truncate">
+                          {entry.kind === 'reversal' ? 'Refund' : `${fmt(Number(entry.net_amount))} excl. VAT`}
+                          {entry.kind === 'earn' && entry.promo_name && ` · ${entry.promo_name} (${fmt(Number(entry.spend_per_point))} = 1 pt)`}
+                        </div>
+                      </div>
+                      <span className={`font-semibold whitespace-nowrap ${entry.points < 0 ? 'text-danger-600' : 'text-success-600'}`}>
+                        {entry.points > 0 ? '+' : '−'}{Math.abs(entry.points)} pts
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -392,18 +478,23 @@ export default function CustomersPage() {
         onClose={() => setIsAddOpen(false)}
         title="Add Customer"
         footer={
-          <div className="px-6 py-4 flex gap-3">
-            <button onClick={() => setIsAddOpen(false)}
-              className="flex-1 py-2.5 text-sm font-semibold text-neutral-600
-                bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors">
-              Cancel
-            </button>
-            <button onClick={handleAdd}
-              disabled={!form.name || !form.email}
-              className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-600
-                rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-              Add Customer
-            </button>
+          <div className="px-6 py-4 flex flex-col gap-2">
+            {formError && <p className="text-xs text-danger-600">{formError}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setIsAddOpen(false)} disabled={isSaving}
+                className="flex-1 py-2.5 text-sm font-semibold text-neutral-600
+                  bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors disabled:opacity-40">
+                Cancel
+              </button>
+              <button onClick={handleAdd}
+                disabled={!form.name || isSaving}
+                className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-600
+                  rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+                  flex items-center justify-center gap-2">
+                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Add Customer
+              </button>
+            </div>
           </div>
         }
       >
@@ -416,34 +507,39 @@ export default function CustomersPage() {
         onClose={() => setEditTarget(null)}
         title="Edit Customer"
         footer={
-          <div className="px-6 py-4 flex gap-3">
-            <button onClick={() => setEditTarget(null)}
-              className="flex-1 py-2.5 text-sm font-semibold text-neutral-600
-                bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors">
-              Cancel
-            </button>
-            <button onClick={handleEdit}
-              disabled={!form.name || !form.email}
-              className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-600
-                rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-              Save Changes
-            </button>
+          <div className="px-6 py-4 flex flex-col gap-2">
+            {formError && <p className="text-xs text-danger-600">{formError}</p>}
+            <div className="flex gap-3">
+              <button onClick={() => setEditTarget(null)} disabled={isSaving}
+                className="flex-1 py-2.5 text-sm font-semibold text-neutral-600
+                  bg-neutral-100 rounded-lg hover:bg-neutral-200 transition-colors disabled:opacity-40">
+                Cancel
+              </button>
+              <button onClick={handleEdit}
+                disabled={!form.name || isSaving}
+                className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-600
+                  rounded-lg hover:bg-brand-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+                  flex items-center justify-center gap-2">
+                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
           </div>
         }
       >
         <CustomerFormFields state={form} onChange={setForm} />
       </DrawerModal>
 
-      {/* ── Delete confirm ── */}
+      {/* ── Deactivate confirm ── */}
       <ConfirmModal
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
-        title="Remove customer?"
+        onConfirm={handleDeactivate}
+        title="Deactivate customer?"
         message={
-          <><span className="font-semibold text-neutral-600">{deleteTarget?.name}</span> will be removed from your customer list.</>
+          <><span className="font-semibold text-neutral-600">{deleteTarget?.name}</span> will be marked inactive. Their purchase history is kept.</>
         }
-        confirmLabel="Remove"
+        confirmLabel="Deactivate"
         variant="danger"
       />
     </div>

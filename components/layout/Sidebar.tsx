@@ -32,7 +32,7 @@ type NavItem = FlatItem | GroupItem
 
 const NAV_ITEMS: NavItem[] = [
   { type: 'flat', href: '/dashboard',                          icon: Home,      label: 'Dashboard'         },
-  { type: 'flat', href: '/dashboard/inventory',                icon: Package,   label: 'Inventory'         },
+  { type: 'flat', href: '/dashboard/inventory',                icon: Package,   label: 'Main Inventory'         },
   { type: 'flat', href: '/dashboard/suppliers',                icon: Truck,     label: 'Supplier'          },
   { type: 'flat', href: '/dashboard/sales',                    icon: Receipt,   label: 'Sales'             },
   { type: 'flat', href: '/dashboard/customers',                icon: Users,     label: 'Customers'         },
@@ -45,8 +45,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Branches',
     children: [
       { href: '/dashboard/branches',               label: 'Branches',    exact: true },
-      { href: '/dashboard/branches/inventory',     label: 'Inventory'     },
-      { href: '/dashboard/branches/staff',         label: 'Staff'         },
+      { href: '/dashboard/branches/inventory',     label: 'Branch Inventory'     },
       { href: '/dashboard/branches/configuration', label: 'Configuration' },
     ],
   },

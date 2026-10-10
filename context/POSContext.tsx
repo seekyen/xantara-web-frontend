@@ -1,61 +1,103 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react'
-import { type Product }                        from '@/lib/mock/products'
-import { getAllProducts }                       from '@/lib/api/products'
-import { MOCK_TRANSACTIONS, type Transaction } from '@/lib/mock/transactions'
-import { MOCK_CUSTOMERS, type Customer }       from '@/lib/mock/customers'
-import { MOCK_STAFF, type Staff }              from '@/lib/mock/staff'
+import { createContext, useContext, useState, useEffect, useLayoutEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react'
+
+// Runs before first paint on client; falls back to useEffect on server (SSR-safe) —
+// mirrors AuthContext's helper. Needed here (not plain useEffect) because the branch
+// below can call setState synchronously when there's no session to fetch for.
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
+import { type Product }               from '@/lib/mock/products'
+import { getAllProducts }             from '@/lib/api/products'
+import { type Transaction }           from '@/lib/api/sales'
+import { getAllTransactions }         from '@/lib/api/sales'
+import { type Customer }              from '@/lib/api/customers'
+import { getAllCustomers }            from '@/lib/api/customers'
+import { type Staff }                 from '@/lib/api/staff'
+import { getAllStaff }                from '@/lib/api/staff'
+import { useAuth }                    from '@/context/AuthContext'
 
 const ACCESS_TOKEN_KEY = 'xantara_pos_access'
 
 interface POSContextType {
-  products:        Product[]
-  setProducts:     Dispatch<SetStateAction<Product[]>>
-  productsLoading: boolean
-  transactions:    Transaction[]
-  setTransactions: Dispatch<SetStateAction<Transaction[]>>
-  customers:       Customer[]
-  setCustomers:    Dispatch<SetStateAction<Customer[]>>
-  staff:           Staff[]
-  setStaff:        Dispatch<SetStateAction<Staff[]>>
+  products:           Product[]
+  setProducts:        Dispatch<SetStateAction<Product[]>>
+  productsLoading:    boolean
+  transactions:       Transaction[]
+  setTransactions:    Dispatch<SetStateAction<Transaction[]>>
+  transactionsLoading: boolean
+  customers:          Customer[]
+  setCustomers:       Dispatch<SetStateAction<Customer[]>>
+  customersLoading:   boolean
+  staff:              Staff[]
+  setStaff:           Dispatch<SetStateAction<Staff[]>>
+  staffLoading:       boolean
 }
 
 const POSContext = createContext<POSContextType | null>(null)
 
 export function POSProvider({ children }: { children: ReactNode }) {
+  const { user, hydrated } = useAuth()
+
   const [products,        setProducts]        = useState<Product[]>([])
   const [productsLoading, setProductsLoading] = useState(true)
-  const [transactions,    setTransactions]    = useState<Transaction[]>(MOCK_TRANSACTIONS)
-  const [customers,       setCustomers]       = useState<Customer[]>(MOCK_CUSTOMERS)
-  const [staff,           setStaff]           = useState<Staff[]>(MOCK_STAFF)
+  const [transactions,        setTransactions]        = useState<Transaction[]>([])
+  const [transactionsLoading, setTransactionsLoading] = useState(true)
+  const [customers,        setCustomers]        = useState<Customer[]>([])
+  const [customersLoading, setCustomersLoading] = useState(true)
+  const [staff,            setStaff]            = useState<Staff[]>([])
+  const [staffLoading,     setStaffLoading]      = useState(true)
 
-  useEffect(() => {
+  // Providers.tsx mounts this once at the app root, above both /login and /dashboard,
+  // so it must react to auth state rather than fetch once on mount — a plain `[]`
+  // dependency array would only ever see the pre-login (tokenless) state and never
+  // re-run after a client-side login redirect, leaving every list empty until a
+  // full page reload.
+  useIsomorphicLayoutEffect(() => {
+    if (!hydrated) return
     const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-    if (!token) {
-      const timer = window.setTimeout(() => setProductsLoading(false), 0)
-      return () => window.clearTimeout(timer)
+    if (!user || !token) {
+      setProducts([]);     setProductsLoading(false)
+      setTransactions([]); setTransactionsLoading(false)
+      setCustomers([]);    setCustomersLoading(false)
+      setStaff([]);        setStaffLoading(false)
+      return
     }
 
-    async function load() {
-      try {
-        const all = await getAllProducts(token ?? undefined)
-        setProducts(all)
-      } catch (err) {
-        console.error('Failed to fetch products:', err)
-      } finally {
-        setProductsLoading(false)
-      }
-    }
-    void load()
-  }, [])
+    let cancelled = false
+    setProductsLoading(true)
+    setTransactionsLoading(true)
+    setCustomersLoading(true)
+    setStaffLoading(true)
+
+    getAllProducts(token)
+      .then((all) => { if (!cancelled) setProducts(all) })
+      .catch((err) => console.error('Failed to fetch products:', err))
+      .finally(() => { if (!cancelled) setProductsLoading(false) })
+
+    getAllTransactions(token)
+      .then((all) => { if (!cancelled) setTransactions(all) })
+      .catch((err) => console.error('Failed to fetch transactions:', err))
+      .finally(() => { if (!cancelled) setTransactionsLoading(false) })
+
+    getAllCustomers(token)
+      .then((all) => { if (!cancelled) setCustomers(all) })
+      .catch((err) => console.error('Failed to fetch customers:', err))
+      .finally(() => { if (!cancelled) setCustomersLoading(false) })
+
+    getAllStaff(token)
+      .then((all) => { if (!cancelled) setStaff(all) })
+      .catch((err) => console.error('Failed to fetch staff:', err))
+      .finally(() => { if (!cancelled) setStaffLoading(false) })
+
+    return () => { cancelled = true }
+  }, [user, hydrated])
 
   return (
     <POSContext.Provider value={{
       products, setProducts, productsLoading,
-      transactions, setTransactions,
-      customers, setCustomers,
-      staff, setStaff,
+      transactions, setTransactions, transactionsLoading,
+      customers, setCustomers, customersLoading,
+      staff, setStaff, staffLoading,
     }}>
       {children}
     </POSContext.Provider>

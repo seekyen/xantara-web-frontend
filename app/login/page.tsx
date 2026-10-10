@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { getSetupStatus } from '@/lib/api/setup'
 
 export default function LoginPage() {
   const router               = useRouter()
@@ -14,12 +15,26 @@ export default function LoginPage() {
   const [showPw,   setShowPw]   = useState(false)
   const [error,    setError]    = useState('')
   const [loading,  setLoading]  = useState(false)
+  const [setupChecked, setSetupChecked] = useState(false)
 
   useEffect(() => {
     if (hydrated && user) router.replace('/dashboard')
   }, [hydrated, user, router])
 
-  if (!hydrated || user) return null
+  useEffect(() => {
+    if (!hydrated || user) return
+    let active = true
+    getSetupStatus()
+      .then((status) => {
+        if (!active) return
+        if (status.setup_required) router.replace('/setup')
+        else setSetupChecked(true)
+      })
+      .catch(() => { if (active) setSetupChecked(true) })
+    return () => { active = false }
+  }, [hydrated, user, router])
+
+  if (!hydrated || user || !setupChecked) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,7 +69,7 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-6">
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate autoComplete="off" className="space-y-4">
 
             <div>
               <label className="block text-xs font-semibold text-neutral-600
@@ -63,14 +78,13 @@ export default function LoginPage() {
               </label>
               <input
                 type="email"
-                autoComplete="email"
+                autoComplete="off"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
                   setError('')
                 }}
                 onBlur={() => setEmail((value) => value.trim())}
-                placeholder="ck@xantara.com"
                 required
                 className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg
                   focus:outline-none focus:ring-2 focus:ring-brand-600
@@ -86,13 +100,12 @@ export default function LoginPage() {
               <div className="relative">
                 <input
                   type={showPw ? 'text' : 'password'}
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value)
                     setError('')
                   }}
-                  placeholder="••••••••"
                   required
                   className="w-full px-3 py-2.5 pr-10 text-sm border border-neutral-200
                     rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600

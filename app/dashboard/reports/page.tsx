@@ -1,18 +1,24 @@
 'use client'
 
-// TODO: Replace MOCK_DATA with API call → GET /api/reports?period=weekly
-
-import { useState } from 'react'
-import { Download, TrendingUp, TrendingDown } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Download, Loader2 } from 'lucide-react'
 import {
-  WEEKLY_SALES, MONTHLY_SALES, HOURLY_SALES,
-  CATEGORY_BREAKDOWN, PAYMENT_BREAKDOWN,
-} from '@/lib/mock/reports'
+  getWeeklySales, getMonthlySales, getTopProducts, getPaymentBreakdown, getCategoryRevenue,
+  type WeeklySalesPoint, type MonthlySalesPoint, type TopProduct,
+  type PaymentBreakdownEntry, type CategoryRevenueEntry, type ReportPeriod,
+} from '@/lib/api/reports'
 import { usePOS } from '@/context/POSContext'
 
 type Period = 'Today' | 'This Week' | 'This Month'
 
-function fmt(n: number) { return `₱${n.toLocaleString('en-PH')}` }
+const authToken = () => localStorage.getItem('xantara_pos_access') ?? undefined
+
+function fmt(n: number) { return `₱${Number(n).toLocaleString('en-PH')}` }
+
+function isSameDay(iso: string, ref: Date) {
+  const d = new Date(iso)
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate()
+}
 
 // ── Bar chart (pure CSS divs) ─────────────────────────────────────────────────
 function BarChart({ data, labelKey, valueKey, highlightIdx }: {
@@ -55,42 +61,79 @@ function BarChart({ data, labelKey, valueKey, highlightIdx }: {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
-  const { transactions, products } = usePOS()
-  const [period, setPeriod]        = useState<Period>('This Week')
+  const { transactions } = usePOS()
+  const [period, setPeriod] = useState<Period>('This Week')
+
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState('')
+  const [weekly,   setWeekly]   = useState<WeeklySalesPoint[]>([])
+  const [monthly,  setMonthly]  = useState<MonthlySalesPoint[]>([])
+  const [topProds, setTopProds] = useState<TopProduct[]>([])
+  const [payments, setPayments] = useState<PaymentBreakdownEntry[]>([])
+  const [categories, setCategories] = useState<CategoryRevenueEntry[]>([])
+
+  useEffect(() => {
+    // TopProductsView/PaymentBreakdownView only support period=today|week|all — "This
+    // Month" has no dedicated backend bucket, so it falls back to an all-time view.
+    const reportPeriod: ReportPeriod = period === 'Today' ? 'today' : period === 'This Week' ? 'week' : 'all'
+    const token = authToken()
+    let cancelled = false
+    Promise.all([
+      getWeeklySales(token),
+      getMonthlySales(token),
+      getTopProducts({ period: reportPeriod, limit: 5 }, token),
+      getPaymentBreakdown({ period: reportPeriod }, token),
+      getCategoryRevenue(token),
+    ]).then(([w, m, tp, pb, cat]) => {
+      if (cancelled) return
+      setWeekly(w); setMonthly(m); setTopProds(tp); setPayments(pb); setCategories(cat)
+    }).catch(() => {
+      if (!cancelled) setError('Could not load reports. Check the backend connection and try again.')
+    }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [period])
+
+  // Hourly buckets have no backend endpoint yet — derived client-side from the
+  // transactions already loaded into POSContext instead of a separate report call.
+  const today = new Date()
+  const todaysTxns = transactions.filter((t) => t.status === 'completed' && isSameDay(t.created_at, today))
+  const HOURS = ['8AM','9AM','10AM','11AM','12PM','1PM','2PM','3PM','4PM','5PM','6PM','7PM']
+  const hourlySales = HOURS.map((label, i) => {
+    const hour24 = i < 4 ? 8 + i : 12 + (i - 4) // 8,9,10,11,12,13,...19
+    const sales  = todaysTxns
+      .filter((t) => new Date(t.created_at).getHours() === hour24)
+      .reduce((s, t) => s + Number(t.total), 0)
+    return { hour: label, sales }
+  })
+  const maxHourly = Math.max(...hourlySales.map((h) => h.sales), 1)
 
   const chartData =
-    period === 'Today'      ? HOURLY_SALES.map((h) => ({ label: h.hour,  value: h.sales })) :
-    period === 'This Week'  ? WEEKLY_SALES.map((d) => ({ label: d.day,   value: d.sales })) :
-    MONTHLY_SALES.map((m) => ({ label: m.month, value: m.sales }))
+    period === 'Today'      ? hourlySales.map((h) => ({ label: h.hour,  value: h.sales })) :
+    period === 'This Week'  ? weekly.map((d) => ({ label: d.day,   value: d.sales })) :
+    monthly.map((m) => ({ label: m.month, value: m.sales }))
 
   const periodRevenue = chartData.reduce((s, d) => s + d.value, 0)
-  const periodOrders  = period === 'This Week'
-    ? WEEKLY_SALES.reduce((s, d) => s + d.txns, 0)
-    : period === 'This Month' ? MONTHLY_SALES.reduce((s, d) => s + d.txns, 0)
-    : transactions.filter((t) => t.date === '2026-05-24').length
-  const avgOrder      = periodOrders ? Math.round(periodRevenue / periodOrders) : 0
-  const returnRate    = 2.1
+  const periodOrders  =
+    period === 'This Week'  ? weekly.reduce((s, d) => s + d.txns, 0) :
+    period === 'This Month' ? monthly.reduce((s, d) => s + d.txns, 0) :
+    todaysTxns.length
+  const avgOrder = periodOrders ? Math.round(periodRevenue / periodOrders) : 0
 
-  // Units sold per product, aggregated from completed transactions
-  const soldByProduct = transactions.reduce<Record<string, number>>((acc, t) => {
-    if (t.status === 'Completed') {
-      t.items.forEach((item) => { acc[item.productId] = (acc[item.productId] ?? 0) + item.qty })
+  // Return rate — derived from the real transactions already in context, not a mock constant.
+  const periodTxns = transactions.filter((t) => {
+    if (period === 'Today') return isSameDay(t.created_at, today)
+    if (period === 'This Week') {
+      const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7)
+      return new Date(t.created_at) >= weekAgo
     }
-    return acc
-  }, {})
+    const monthAgo = new Date(today); monthAgo.setDate(today.getDate() - 30)
+    return new Date(t.created_at) >= monthAgo
+  })
+  const refundedInPeriod = periodTxns.filter((t) => t.status === 'refunded').length
+  const settledInPeriod  = periodTxns.filter((t) => t.status === 'completed' || t.status === 'refunded').length
+  const returnRate = settledInPeriod ? Number(((refundedInPeriod / settledInPeriod) * 100).toFixed(1)) : 0
 
-  // Top 5 products by revenue (sell_price_rp × units sold)
-  const topProducts = [...products]
-    .sort((a, b) =>
-      b.sell_price_rp * (soldByProduct[String(b.id)] ?? 0) -
-      a.sell_price_rp * (soldByProduct[String(a.id)] ?? 0)
-    )
-    .slice(0, 5)
-  const maxProdRev = topProducts[0]
-    ? topProducts[0].sell_price_rp * (soldByProduct[String(topProducts[0].id)] ?? 0)
-    : 1
-
-  const maxHourly = Math.max(...HOURLY_SALES.map((h) => h.sales))
+  const maxProdRev = topProds[0]?.total_revenue || 1
 
   return (
     <div className="pb-8">
@@ -105,7 +148,7 @@ export default function ReportsPage() {
           {/* Period toggle */}
           <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1">
             {(['Today','This Week','This Month'] as Period[]).map((p) => (
-              <button key={p} onClick={() => setPeriod(p)}
+              <button key={p} onClick={() => { setLoading(true); setError(''); setPeriod(p) }}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
                   ${period === p ? 'bg-white text-neutral-800 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}>
                 {p}
@@ -119,24 +162,29 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {error && (
+        <div className="mx-6 mt-2 px-4 py-3 bg-danger-50 text-danger-600 text-sm rounded-xl">{error}</div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-24 text-neutral-400">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Loading reports…</span>
+        </div>
+      ) : (
+      <>
       {/* ── KPI cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 px-6 py-4">
         {[
-          { label: 'Net Revenue',      value: fmt(periodRevenue), sub: '+18% vs last period', trend: 'up'      as const, color: 'text-success-600' },
-          { label: 'Total Orders',     value: String(periodOrders), sub: '+12%',              trend: 'up'      as const, color: 'text-success-600' },
-          { label: 'Avg Order Value',  value: fmt(avgOrder),       sub: '+5%',                trend: 'up'      as const, color: 'text-success-600' },
-          { label: 'Return Rate',      value: `${returnRate}%`,    sub: '-0.3%',              trend: 'down'    as const, color: 'text-success-600' },
+          { label: 'Net Revenue',      value: fmt(periodRevenue), sub: period.toLowerCase() },
+          { label: 'Total Orders',     value: String(periodOrders), sub: period.toLowerCase() },
+          { label: 'Avg Order Value',  value: fmt(avgOrder),       sub: 'per transaction' },
+          { label: 'Return Rate',      value: `${returnRate}%`,    sub: `${refundedInPeriod} refunded` },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl border border-neutral-200 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">{s.label}</span>
-              {s.trend === 'up'
-                ? <TrendingUp   className="w-4 h-4 text-success-600" />
-                : <TrendingDown className="w-4 h-4 text-danger-600"  />
-              }
-            </div>
-            <div className="text-2xl font-bold text-neutral-800">{s.value}</div>
-            <div className={`text-xs mt-1 ${s.color}`}>{s.sub}</div>
+            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wide">{s.label}</span>
+            <div className="text-2xl font-bold text-neutral-800 mt-3">{s.value}</div>
+            <div className="text-xs mt-1 text-neutral-400">{s.sub}</div>
           </div>
         ))}
       </div>
@@ -161,25 +209,29 @@ export default function ReportsPage() {
         {/* Category breakdown */}
         <div className="bg-white rounded-xl border border-neutral-200 p-5">
           <h3 className="text-sm font-bold text-neutral-800 mb-4">Category Breakdown</h3>
-          <div className="space-y-3">
-            {CATEGORY_BREAKDOWN.map((c) => (
-              <div key={c.category}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-neutral-700">{c.category}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-neutral-400">{c.percentage}%</span>
-                    <span className="text-xs font-bold text-brand-600">{fmt(c.revenue)}</span>
+          {categories.length === 0 ? (
+            <p className="text-xs text-neutral-400">No completed sales yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {categories.map((c) => (
+                <div key={c.category}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-neutral-700">{c.category}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-neutral-400">{c.percentage}%</span>
+                      <span className="text-xs font-bold text-brand-600">{fmt(c.revenue)}</span>
+                    </div>
+                  </div>
+                  <div className="h-2 bg-neutral-100 rounded-full">
+                    <div
+                      className="h-full bg-brand-600 rounded-full transition-all"
+                      style={{ width: `${c.percentage}%` }}
+                    />
                   </div>
                 </div>
-                <div className="h-2 bg-neutral-100 rounded-full">
-                  <div
-                    className="h-full bg-brand-600 rounded-full transition-all"
-                    style={{ width: `${c.percentage}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>
@@ -192,7 +244,7 @@ export default function ReportsPage() {
           <h3 className="text-sm font-bold text-neutral-800 mb-4">Payment Methods</h3>
           {/* Stacked bar */}
           <div className="flex h-3 rounded-full overflow-hidden mb-4">
-            {PAYMENT_BREAKDOWN.map((p) => (
+            {payments.map((p) => (
               <div
                 key={p.method}
                 style={{ width: `${p.percentage}%`, backgroundColor: p.color }}
@@ -201,7 +253,7 @@ export default function ReportsPage() {
             ))}
           </div>
           <div className="space-y-2.5">
-            {PAYMENT_BREAKDOWN.map((p) => (
+            {payments.map((p) => (
               <div key={p.method} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
@@ -219,35 +271,38 @@ export default function ReportsPage() {
         {/* Top 5 products */}
         <div className="bg-white rounded-xl border border-neutral-200 p-5">
           <h3 className="text-sm font-bold text-neutral-800 mb-4">Top Products</h3>
-          <div className="space-y-3">
-            {topProducts.map((p, i) => {
-              const rev = p.sell_price_rp * (soldByProduct[String(p.id)] ?? 0)
-              const w   = Math.round((rev / maxProdRev) * 100)
-              return (
-                <div key={p.id} className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-neutral-400 w-4">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-semibold text-neutral-800 truncate">{p.descshort}</span>
-                      <span className="text-xs font-bold text-brand-600 ml-2 whitespace-nowrap">{fmt(rev)}</span>
-                    </div>
-                    <div className="h-1.5 bg-neutral-100 rounded-full">
-                      <div className="h-full bg-brand-600 rounded-full" style={{ width: `${w}%` }} />
+          {topProds.length === 0 ? (
+            <p className="text-xs text-neutral-400">No completed sales yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {topProds.map((p, i) => {
+                const w = Math.round((p.total_revenue / maxProdRev) * 100)
+                return (
+                  <div key={p.product__id ?? i} className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-neutral-400 w-4">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs font-semibold text-neutral-800 truncate">{p.product__descshort ?? 'Unknown product'}</span>
+                        <span className="text-xs font-bold text-brand-600 ml-2 whitespace-nowrap">{fmt(p.total_revenue)}</span>
+                      </div>
+                      <div className="h-1.5 bg-neutral-100 rounded-full">
+                        <div className="h-full bg-brand-600 rounded-full" style={{ width: `${w}%` }} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Hourly heatmap */}
+        {/* Hourly heatmap (derived from today's real transactions) */}
         <div className="bg-white rounded-xl border border-neutral-200 p-5">
           <h3 className="text-sm font-bold text-neutral-800 mb-1">Hourly Activity</h3>
-          <p className="text-xs text-neutral-400 mb-4">Darker = more sales</p>
+          <p className="text-xs text-neutral-400 mb-4">Today · darker = more sales</p>
           <div className="space-y-1.5">
             <div className="grid grid-cols-6 gap-1">
-              {HOURLY_SALES.slice(0, 6).map((h) => (
+              {hourlySales.slice(0, 6).map((h) => (
                 <div key={h.hour}
                   className="h-8 rounded-sm bg-brand-600 cursor-default"
                   style={{ opacity: Math.max(0.1, h.sales / maxHourly) }}
@@ -256,7 +311,7 @@ export default function ReportsPage() {
               ))}
             </div>
             <div className="grid grid-cols-6 gap-1">
-              {HOURLY_SALES.slice(6).map((h) => (
+              {hourlySales.slice(6).map((h) => (
                 <div key={h.hour}
                   className="h-8 rounded-sm bg-brand-600 cursor-default"
                   style={{ opacity: Math.max(0.1, h.sales / maxHourly) }}
@@ -265,26 +320,28 @@ export default function ReportsPage() {
               ))}
             </div>
             <div className="grid grid-cols-6 gap-1">
-              {HOURLY_SALES.slice(0, 6).map((h) => (
+              {hourlySales.slice(0, 6).map((h) => (
                 <div key={h.hour} className="text-[9px] text-neutral-400 text-center">{h.hour}</div>
               ))}
             </div>
             <div className="grid grid-cols-6 gap-1">
-              {HOURLY_SALES.slice(6).map((h) => (
+              {hourlySales.slice(6).map((h) => (
                 <div key={h.hour} className="text-[9px] text-neutral-400 text-center">{h.hour}</div>
               ))}
             </div>
           </div>
           {/* Peak hours callout */}
-          <div className="mt-3 p-3 bg-brand-50 rounded-lg">
-            <p className="text-xs text-neutral-600">
-              Peak hour:{' '}
-              <span className="font-bold text-brand-600">
-                {HOURLY_SALES.reduce((a, b) => a.sales > b.sales ? a : b).hour}
-              </span>{' '}
-              · {fmt(Math.max(...HOURLY_SALES.map((h) => h.sales)))}
-            </p>
-          </div>
+          {todaysTxns.length > 0 && (
+            <div className="mt-3 p-3 bg-brand-50 rounded-lg">
+              <p className="text-xs text-neutral-600">
+                Peak hour:{' '}
+                <span className="font-bold text-brand-600">
+                  {hourlySales.reduce((a, b) => a.sales > b.sales ? a : b).hour}
+                </span>{' '}
+                · {fmt(maxHourly)}
+              </p>
+            </div>
+          )}
         </div>
 
       </div>
@@ -307,11 +364,11 @@ export default function ReportsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {WEEKLY_SALES.map((d, i) => {
+            {weekly.map((d, i) => {
               const avg = d.txns ? Math.round(d.sales / d.txns) : 0
-              const isToday = i === 5
+              const isToday = i === weekly.length - 1
               return (
-                <tr key={d.day} className={`${isToday ? 'bg-brand-50' : 'hover:bg-neutral-50'} transition-colors`}>
+                <tr key={d.date} className={`${isToday ? 'bg-brand-50' : 'hover:bg-neutral-50'} transition-colors`}>
                   <td className="px-4 py-3">
                     <span className={`text-sm font-semibold ${isToday ? 'text-brand-600' : 'text-neutral-800'}`}>
                       {d.day}{isToday ? ' (today)' : ''}
@@ -332,6 +389,8 @@ export default function ReportsPage() {
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
     </div>
   )

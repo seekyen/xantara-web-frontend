@@ -46,6 +46,19 @@ export async function apiFetch<T>(
   return JSON.parse(text) as T
 }
 
+/** Authenticated file download (PDF/Excel). Returns the raw Blob; errors surface as ApiError. */
+export async function apiBlob(path: string, token?: string): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (res.status === 401 && token && typeof window !== 'undefined') {
+    localStorage.removeItem('xantara_pos_user')
+    localStorage.removeItem('xantara_pos_access')
+    localStorage.removeItem('xantara_pos_refresh')
+    window.location.href = '/login'
+  }
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => ({})))
+  return res.blob()
+}
+
 export type PagedResponse<T> = {
   count:    number
   next:     string | null
