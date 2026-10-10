@@ -1,0 +1,22 @@
+[Unit]
+Description=Xantara POS web frontend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xantara-web
+Group=xantara-web
+WorkingDirectory=/srv/xantarapos/frontend
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/xantarapos/frontend.env
+ExecStart=/usr/bin/npm start -- --hostname 127.0.0.1 --port 4020
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

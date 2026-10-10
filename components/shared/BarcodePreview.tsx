@@ -32,5 +32,7 @@ export default function BarcodePreview({ value, format, height = 50, displayValu
     }
   }, [value, format, height, displayValue])
 
-  return <svg ref={svgRef} />
+  // JsBarcode writes fixed width/height attributes; max-w-full + h-auto lets the SVG
+  // scale down (it also sets a viewBox) instead of overflowing its container.
+  return <svg ref={svgRef} className="block max-w-full h-auto" />
 }

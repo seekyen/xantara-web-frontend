@@ -58,3 +58,28 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Keep form entries readable on light surfaces, including when the operating
+   system prefers dark mode and browser autofill supplies its own text color. */
+input,
+textarea,
+select,
+option {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000;
+  caret-color: #000000;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #000000 !important;
+  opacity: 1;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000;
+  opacity: 1;
+}

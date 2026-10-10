@@ -18,8 +18,14 @@ export const getCategories = (token?: string) =>
 export const getCategoriesPaged = (page = 1, token?: string) =>
   apiFetch<PagedResponse<Category>>(`/api/v1/categories/?page=${page}`, {}, token)
 
-export const createCategory = (name: string, token?: string) =>
-  apiFetch<Category>('/api/v1/categories/', { method: 'POST', body: JSON.stringify({ name }) }, token)
+export const createCategory = (
+  data: string | { name: string; is_active?: boolean },
+  token?: string,
+) =>
+  apiFetch<Category>('/api/v1/categories/', {
+    method: 'POST',
+    body: JSON.stringify(typeof data === 'string' ? { name: data } : data),
+  }, token)
 
 export const updateCategory = (id: number, data: { name?: string; is_active?: boolean }, token?: string) =>
   apiFetch<Category>(`/api/v1/categories/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }, token)
